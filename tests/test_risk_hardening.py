@@ -1,3 +1,4 @@
+import pathlib
 import time
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -236,6 +237,11 @@ def test_worker_execute_action_returns_platform_result(isolated_modules):
 
     assert response["ok"] is True
     assert response["data"]["message"] == "done"
+
+
+def test_dockerfile_prefetches_camoufox_for_solver_runtime():
+    dockerfile = pathlib.Path("/root/any-auto-register/Dockerfile").read_text(encoding="utf-8")
+    assert "python -m camoufox fetch" in dockerfile
 
 
 def test_task_event_buffer_flushes_in_batch(isolated_modules):

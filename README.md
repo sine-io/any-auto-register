@@ -320,6 +320,14 @@ http://localhost:8000
 
 因此，前端静态资源在这套部署下会自动把已迁移的查询与任务接口发送到 Go。
 
+为了避免容器第一次启动时再临时下载 Camoufox 导致 Solver 启动超时，Python 镜像在构建阶段会预取：
+
+```text
+python -m camoufox fetch
+```
+
+因此双后端镜像的首次构建时间会明显长于普通前端/后端镜像，但运行期会更稳定。
+
 > 注意：
 >
 > - `docker-compose.control-plane.yml` 是新增的双后端部署方案，不会替换原来的单 Python 部署
