@@ -1,0 +1,9 @@
+:8000 {
+    @go path /api-go/*
+    handle @go {
+        uri strip_prefix /api-go
+        reverse_proxy go-control-plane:8080
+    }
+
+    reverse_proxy python-worker:8000
+}

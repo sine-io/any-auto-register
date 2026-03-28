@@ -45,6 +45,15 @@ class BasePlatform(ABC):
     # 子类声明支持的执行器类型，未列出的自动降级到 protocol
     supported_executors: list = ["protocol", "headless", "headed"]
 
+    @classmethod
+    def is_available(cls) -> bool:
+        """Whether the platform can be used in the current runtime."""
+        return True
+
+    @classmethod
+    def get_unavailable_reason(cls) -> str:
+        return ""
+
     def __init__(self, config: RegisterConfig = None):
         self.config = config or RegisterConfig()
         if self.config.executor_type not in self.supported_executors:
@@ -73,6 +82,9 @@ class BasePlatform(ABC):
         {"id": str, "label": str, "params": [{"key": str, "label": str, "type": str}]}
         """
         return []
+
+    def get_action_availability(self, action_id: str) -> tuple[bool, str]:
+        return True, ""
 
     def execute_action(self, action_id: str, account: Account, params: dict) -> dict:
         """

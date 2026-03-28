@@ -1,4 +1,5 @@
 """数据库模型 - SQLite via SQLModel"""
+import os
 from datetime import datetime, timezone
 from typing import Optional
 from sqlmodel import Field, SQLModel, create_engine, Session, select
@@ -8,8 +9,16 @@ import json
 def _utcnow():
     return datetime.now(timezone.utc)
 
-DATABASE_URL = "sqlite:///account_manager.db"
-engine = create_engine(DATABASE_URL)
+
+def _get_database_url() -> str:
+    return os.getenv("APP_DB_URL", "sqlite:///account_manager.db")
+
+
+DATABASE_URL = _get_database_url()
+_engine_kwargs = {}
+if DATABASE_URL.startswith("sqlite"):
+    _engine_kwargs["connect_args"] = {"check_same_thread": False}
+engine = create_engine(DATABASE_URL, **_engine_kwargs)
 
 
 class AccountModel(SQLModel, table=True):
@@ -48,6 +57,34 @@ class TaskLog(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_utcnow)
 
 
+class TaskRunModel(SQLModel, table=True):
+    __tablename__ = "task_runs"
+
+    id: str = Field(primary_key=True)
+    platform: str = Field(index=True)
+    status: str = "pending"
+    progress_current: int = 0
+    progress_total: int = 0
+    success_count: int = 0
+    error_count: int = 0
+    error_summary: str = ""
+    errors_json: str = "[]"
+    request_json: str = "{}"
+    cashier_urls_json: str = "[]"
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
+
+
+class TaskEventModel(SQLModel, table=True):
+    __tablename__ = "task_events"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    task_id: str = Field(index=True)
+    level: str = "info"
+    message: str
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
 class ProxyModel(SQLModel, table=True):
     __tablename__ = "proxies"
 
@@ -74,6 +111,7 @@ def save_account(account) -> 'AccountModel':
             existing.region = account.region or ""
             existing.token = account.token or ""
             existing.status = account.status.value
+            existing.trial_end_time = account.trial_end_time or 0
             existing.extra_json = json.dumps(account.extra or {}, ensure_ascii=False)
             existing.cashier_url = (account.extra or {}).get("cashier_url", "")
             existing.updated_at = _utcnow()
@@ -89,6 +127,7 @@ def save_account(account) -> 'AccountModel':
             region=account.region or "",
             token=account.token or "",
             status=account.status.value,
+            trial_end_time=account.trial_end_time or 0,
             extra_json=json.dumps(account.extra or {}, ensure_ascii=False),
             cashier_url=(account.extra or {}).get("cashier_url", ""),
         )

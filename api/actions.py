@@ -15,12 +15,23 @@ class ActionRequest(BaseModel):
     params: dict = {}
 
 
+def _annotate_actions(instance) -> list[dict[str, Any]]:
+    actions = []
+    for action in instance.get_platform_actions():
+        item = dict(action)
+        available, reason = instance.get_action_availability(str(item.get("id", "")))
+        item["available"] = bool(available)
+        item["availability_reason"] = reason
+        actions.append(item)
+    return actions
+
+
 @router.get("/{platform}")
 def list_actions(platform: str):
     """获取平台支持的操作列表"""
     PlatformCls = get(platform)
     instance = PlatformCls(config=RegisterConfig(extra=config_store.get_all()))
-    return {"actions": instance.get_platform_actions()}
+    return {"actions": _annotate_actions(instance)}
 
 
 @router.post("/{platform}/{account_id}/{action_id}")
@@ -38,6 +49,9 @@ def execute_action(
 
     PlatformCls = get(platform)
     instance = PlatformCls(config=RegisterConfig(extra=config_store.get_all()))
+    available, reason = instance.get_action_availability(action_id)
+    if not available:
+        raise HTTPException(400, reason or f"操作 {action_id} 当前不可用")
 
     from core.base_platform import Account, AccountStatus
     account = Account(

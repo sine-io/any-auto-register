@@ -18,7 +18,12 @@ import {
   LoadingOutlined,
 } from '@ant-design/icons'
 import { apiFetch } from '@/lib/utils'
-import { getExecutorOptions, normalizeExecutorForPlatform } from '@/lib/registerOptions'
+import {
+  getDefaultPlatform,
+  getExecutorOptions,
+  normalizeExecutorForPlatform,
+  type PlatformMeta,
+} from '@/lib/registerOptions'
 
 const { Text } = Typography
 
@@ -26,12 +31,19 @@ export default function Register() {
   const [form] = Form.useForm()
   const [task, setTask] = useState<any>(null)
   const [polling, setPolling] = useState(false)
+  const [platforms, setPlatforms] = useState<PlatformMeta[]>([])
 
   useEffect(() => {
-    apiFetch('/config').then((cfg) => {
-      const currentPlatform = form.getFieldValue('platform') || 'trae'
+    Promise.all([apiFetch('/config'), apiFetch('/platforms')]).then(([cfg, items]) => {
+      const nextPlatforms = (items || []) as PlatformMeta[]
+      setPlatforms(nextPlatforms)
+      const currentPlatform = getDefaultPlatform(
+        nextPlatforms,
+        form.getFieldValue('platform') || 'trae',
+      )
       form.setFieldsValue({
-        executor_type: normalizeExecutorForPlatform(currentPlatform, cfg.default_executor),
+        platform: currentPlatform,
+        executor_type: normalizeExecutorForPlatform(currentPlatform, cfg.default_executor, nextPlatforms),
         captcha_solver: cfg.default_captcha_solver || 'yescaptcha',
         mail_provider: cfg.mail_provider || 'moemail',
         yescaptcha_key: cfg.yescaptcha_key || '',
@@ -111,15 +123,16 @@ export default function Register() {
   const mailProvider = Form.useWatch('mail_provider', form)
   const captchaSolver = Form.useWatch('captcha_solver', form)
   const platform = Form.useWatch('platform', form)
-  const executorOptions = getExecutorOptions(platform)
+  const executorOptions = getExecutorOptions(platform, platforms)
+  const selectedPlatform = platforms.find((item) => item.name === platform)
 
   useEffect(() => {
     const currentExecutor = form.getFieldValue('executor_type')
-    const normalizedExecutor = normalizeExecutorForPlatform(platform, currentExecutor)
+    const normalizedExecutor = normalizeExecutorForPlatform(platform, currentExecutor, platforms)
     if (currentExecutor !== normalizedExecutor) {
       form.setFieldValue('executor_type', normalizedExecutor)
     }
-  }, [form, platform])
+  }, [form, platform, platforms])
 
   return (
     <div style={{ maxWidth: 800 }}>
@@ -140,14 +153,20 @@ export default function Register() {
         <Card title="基本配置" style={{ marginBottom: 16 }}>
           <Form.Item name="platform" label="平台" rules={[{ required: true }]}>
             <Select
-              options={[
-                { value: 'trae', label: 'Trae.ai' },
-                { value: 'cursor', label: 'Cursor' },
-                { value: 'kiro', label: 'Kiro' },
-                { value: 'grok', label: 'Grok' },
-              ]}
+              options={platforms.map((item) => ({
+                value: item.name,
+                label: item.available === false
+                  ? `${item.display_name}（不可用）`
+                  : item.display_name,
+                disabled: item.available === false,
+              }))}
             />
           </Form.Item>
+          {selectedPlatform?.available === false && selectedPlatform.availability_reason && (
+            <Text type="danger" style={{ display: 'block', marginBottom: 12 }}>
+              {selectedPlatform.availability_reason}
+            </Text>
+          )}
           <Form.Item name="executor_type" label="执行器" rules={[{ required: true }]}>
             <Select options={executorOptions} />
           </Form.Item>

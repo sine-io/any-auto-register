@@ -31,6 +31,13 @@ def get(name: str) -> Type[BasePlatform]:
 
 def list_platforms() -> list:
     return [
-        {"name": cls.name, "display_name": cls.display_name, "version": cls.version}
+        {
+            "name": cls.name,
+            "display_name": cls.display_name,
+            "version": cls.version,
+            "supported_executors": list(getattr(cls, "supported_executors", ["protocol"])),
+            "available": bool(cls.is_available()),
+            "availability_reason": cls.get_unavailable_reason(),
+        }
         for cls in _registry.values()
     ]
