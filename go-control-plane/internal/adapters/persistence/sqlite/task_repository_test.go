@@ -56,6 +56,20 @@ func createTaskTestDB(t *testing.T) *sql.DB {
 	return db
 }
 
+func TestOpenSupportsAbsoluteSQLiteURL(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "absolute.db")
+	uri := "sqlite:////" + dbPath[1:]
+	db, err := Open(uri)
+	if err != nil {
+		t.Fatalf("expected open to succeed, got %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec(`CREATE TABLE demo (id INTEGER PRIMARY KEY)`); err != nil {
+		t.Fatalf("expected absolute sqlite path to be writable, got %v", err)
+	}
+}
+
 func TestTaskRepositoryListsPaginatedRuns(t *testing.T) {
 	db := createTaskTestDB(t)
 	repo := NewTaskRepository(db)

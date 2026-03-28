@@ -156,6 +156,10 @@ func buildDependencies(db *sql.DB, cfg viperconfig.AppConfig) Dependencies {
 	platformRepo := sqliteadapter.NewPlatformRepository(db, cfg.Platforms)
 	workerClient := workerhttp.New(cfg.Worker.BaseURL)
 	applyWorkerEvent := taskcommand.NewApplyWorkerEventHandler(taskCommandRepo)
+	callbackBaseURL := cfg.Server.CallbackBaseURL
+	if callbackBaseURL == "" {
+		callbackBaseURL = cfg.Server.PublicBaseURL
+	}
 	integrationHandler := integrationcommand.NewHandler(workerClient)
 
 	return Dependencies{
@@ -172,7 +176,7 @@ func buildDependencies(db *sql.DB, cfg viperconfig.AppConfig) Dependencies {
 		GetSolverStatus:   systemquery.NewSolverStatusHandler(workerClient),
 		RestartSolver:     systemcommand.NewRestartSolverHandler(workerClient),
 		ListIntegrationServices: integrationquery.NewListServicesHandler(workerClient),
-		CreateTask:        taskcommand.NewHandler(taskCommandRepo, workerClient, nil, nil, cfg.Server.PublicBaseURL),
+		CreateTask:        taskcommand.NewHandler(taskCommandRepo, workerClient, nil, nil, callbackBaseURL),
 		ApplyWorkerEvent:  applyWorkerEvent,
 		CheckAccount:      accountcommand.NewCheckAccountHandler(accountRepo, workerClient),
 		ExecuteAction:     actioncommand.NewExecutePlatformActionHandler(accountRepo, workerClient),

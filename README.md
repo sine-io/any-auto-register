@@ -232,6 +232,7 @@ stop_backend.bat
 cd go-control-plane
 AAR_SERVER_PORT=8080 \
 AAR_SERVER_PUBLIC_BASE_URL=http://127.0.0.1:8080 \
+AAR_SERVER_CALLBACK_BASE_URL=http://127.0.0.1:8080 \
 AAR_WORKER_BASE_URL=http://127.0.0.1:8000 \
 AAR_DATABASE_URL=../account_manager.db \
 go run ./cmd/server server
@@ -322,7 +323,9 @@ http://localhost:8000
 > 注意：
 >
 > - `docker-compose.control-plane.yml` 是新增的双后端部署方案，不会替换原来的单 Python 部署
-> - `AAR_SERVER_PUBLIC_BASE_URL` 默认写的是 `http://127.0.0.1:8000`，如果你用域名或反向代理，请同步修改
+> - `AAR_SERVER_PUBLIC_BASE_URL` 用于前端或网关访问 Go 控制面的外部地址
+> - `AAR_SERVER_CALLBACK_BASE_URL` 用于 Python Worker 回调 Go 控制面。在 docker compose 下应使用容器内地址，例如 `http://go-control-plane:8080`
+> - 如果你用域名或自定义反向代理，请同步检查这两个地址
 
 ***
 

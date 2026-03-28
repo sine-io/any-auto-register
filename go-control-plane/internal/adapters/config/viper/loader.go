@@ -18,6 +18,7 @@ type ServerConfig struct {
 	Host          string `mapstructure:"host"`
 	Port          int    `mapstructure:"port"`
 	PublicBaseURL string `mapstructure:"public_base_url"`
+	CallbackBaseURL string `mapstructure:"callback_base_url"`
 }
 
 type LogConfig struct {
@@ -51,6 +52,7 @@ func Load(configPath string) (AppConfig, error) {
 	v.SetDefault("server.host", "0.0.0.0")
 	v.SetDefault("server.port", 8080)
 	v.SetDefault("server.public_base_url", "http://127.0.0.1:8080")
+	v.SetDefault("server.callback_base_url", "")
 	v.SetDefault("log.level", "info")
 	v.SetDefault("database.url", "../account_manager.db")
 	v.SetDefault("worker.base_url", "http://127.0.0.1:8000")
