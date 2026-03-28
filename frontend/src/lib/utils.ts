@@ -6,8 +6,11 @@ const GO_PATTERNS: Record<string, RegExp[]> = {
   GET: [
     /^\/platforms$/,
     /^\/config$/,
+    /^\/proxies$/,
     /^\/accounts(?:\?.*)?$/,
     /^\/accounts\/stats$/,
+    /^\/solver\/status$/,
+    /^\/integrations\/services$/,
     /^\/tasks(?:\?.*)?$/,
     /^\/tasks\/logs(?:\?.*)?$/,
     /^\/tasks\/[^/]+$/,
@@ -15,6 +18,25 @@ const GO_PATTERNS: Record<string, RegExp[]> = {
   ],
   POST: [
     /^\/tasks\/register$/,
+    /^\/proxies$/,
+    /^\/proxies\/bulk$/,
+    /^\/proxies\/check$/,
+    /^\/solver\/restart$/,
+    /^\/integrations\/services\/start-all$/,
+    /^\/integrations\/services\/stop-all$/,
+    /^\/integrations\/services\/[^/]+\/start$/,
+    /^\/integrations\/services\/[^/]+\/install$/,
+    /^\/integrations\/services\/[^/]+\/stop$/,
+    /^\/integrations\/backfill$/,
+  ],
+  PUT: [
+    /^\/config$/,
+  ],
+  PATCH: [
+    /^\/proxies\/[^/]+\/toggle$/,
+  ],
+  DELETE: [
+    /^\/proxies\/[^/]+$/,
   ],
 }
 

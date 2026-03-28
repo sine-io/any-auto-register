@@ -51,8 +51,25 @@ type ExecuteActionResponse struct {
 	Error string         `json:"error"`
 }
 
+type SolverStatusResponse struct {
+	Running bool `json:"running"`
+}
+
+type IntegrationServicesResponse struct {
+	Items []map[string]any `json:"items"`
+}
+
 type Client interface {
 	Register(ctx context.Context, req RegisterRequest) (RegisterResponse, error)
 	CheckAccount(ctx context.Context, req CheckAccountRequest) (CheckAccountResponse, error)
 	ExecuteAction(ctx context.Context, req ExecuteActionRequest) (ExecuteActionResponse, error)
+	GetSolverStatus(ctx context.Context) (SolverStatusResponse, error)
+	RestartSolver(ctx context.Context) (map[string]any, error)
+	ListIntegrationServices(ctx context.Context) (IntegrationServicesResponse, error)
+	StartAllIntegrationServices(ctx context.Context) (IntegrationServicesResponse, error)
+	StopAllIntegrationServices(ctx context.Context) (IntegrationServicesResponse, error)
+	StartIntegrationService(ctx context.Context, name string) (map[string]any, error)
+	InstallIntegrationService(ctx context.Context, name string) (map[string]any, error)
+	StopIntegrationService(ctx context.Context, name string) (map[string]any, error)
+	BackfillIntegrations(ctx context.Context, platforms []string) (map[string]any, error)
 }

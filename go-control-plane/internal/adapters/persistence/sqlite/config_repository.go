@@ -39,3 +39,21 @@ func (r ConfigRepository) GetAll(ctx context.Context, keys []string) (map[string
 	}
 	return items, rows.Err()
 }
+
+func (r ConfigRepository) SetMany(ctx context.Context, data map[string]string) error {
+	if _, err := r.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS configs (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')`); err != nil {
+		return err
+	}
+	for key, value := range data {
+		if _, err := r.db.ExecContext(
+			ctx,
+			`INSERT INTO configs (key, value) VALUES (?, ?)
+			 ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+			key,
+			value,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}

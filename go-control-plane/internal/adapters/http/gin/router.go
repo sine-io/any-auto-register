@@ -13,10 +13,17 @@ import (
 	workerhttp "go-control-plane/internal/adapters/worker/http"
 	accountcommand "go-control-plane/internal/application/command/account"
 	actioncommand "go-control-plane/internal/application/command/action"
+	configcommand "go-control-plane/internal/application/command/config"
+	integrationcommand "go-control-plane/internal/application/command/integration"
+	proxycommand "go-control-plane/internal/application/command/proxy"
+	systemcommand "go-control-plane/internal/application/command/system"
 	taskcommand "go-control-plane/internal/application/command/task"
 	accountquery "go-control-plane/internal/application/query/account"
 	configquery "go-control-plane/internal/application/query/config"
+	integrationquery "go-control-plane/internal/application/query/integration"
 	platformquery "go-control-plane/internal/application/query/platform"
+	proxyquery "go-control-plane/internal/application/query/proxy"
+	systemquery "go-control-plane/internal/application/query/system"
 	taskquery "go-control-plane/internal/application/query/task"
 
 	"github.com/gin-gonic/gin"
@@ -31,6 +38,10 @@ type PlatformQueryHandler interface {
 	Handle(context.Context) (platformquery.Result, error)
 }
 
+type ListProxiesHandler interface {
+	Handle(context.Context) ([]proxyquery.ProxyItem, error)
+}
+
 type ListAccountsHandler interface {
 	Handle(context.Context, accountquery.ListAccountsQuery) (accountquery.ListAccountsResult, error)
 }
@@ -41,6 +52,10 @@ type DashboardStatsHandler interface {
 
 type GetConfigHandler interface {
 	Handle(context.Context) (map[string]string, error)
+}
+
+type UpdateConfigHandler interface {
+	Handle(context.Context, configcommand.UpdateConfigCommand) (configcommand.UpdateConfigResult, error)
 }
 
 type GetTaskHandler interface {
@@ -55,19 +70,47 @@ type ListTaskEventsHandler interface {
 	Handle(context.Context, taskquery.ListEventsQuery) (taskquery.ListEventsResult, error)
 }
 
+type SolverStatusHandler interface {
+	Handle(context.Context) (systemquery.SolverStatusResult, error)
+}
+
+type RestartSolverHandler interface {
+	Handle(context.Context) (map[string]any, error)
+}
+
+type ListIntegrationServicesHandler interface {
+	Handle(context.Context) (map[string]any, error)
+}
+
+type IntegrationCommandHandler interface {
+	StartAll(context.Context) (map[string]any, error)
+	StopAll(context.Context) (map[string]any, error)
+	Start(context.Context, string) (map[string]any, error)
+	Install(context.Context, string) (map[string]any, error)
+	Stop(context.Context, string) (map[string]any, error)
+	Backfill(context.Context, []string) (map[string]any, error)
+}
+
 type Dependencies struct {
 	ListTasks         TaskQueryHandler
 	ListPlatforms     PlatformQueryHandler
+	ListProxies       ListProxiesHandler
 	ListAccounts      ListAccountsHandler
 	GetDashboardStats DashboardStatsHandler
 	GetConfig         GetConfigHandler
+	UpdateConfig      UpdateConfigHandler
 	GetTask           GetTaskHandler
 	ListTaskLogs      ListTaskLogsHandler
 	ListTaskEvents    ListTaskEventsHandler
+	GetSolverStatus   SolverStatusHandler
+	RestartSolver     RestartSolverHandler
+	ListIntegrationServices ListIntegrationServicesHandler
 	CreateTask        CreateTaskHandler
 	ApplyWorkerEvent  ApplyWorkerEventHandler
 	CheckAccount      CheckAccountHandler
 	ExecuteAction     ExecuteActionHandler
+	ProxyCommands     ProxyCommandHandler
+	IntegrationCommands IntegrationCommandHandler
 }
 
 type CreateTaskHandler interface {
@@ -86,6 +129,14 @@ type ExecuteActionHandler interface {
 	Handle(context.Context, actioncommand.ExecutePlatformActionCommand) (actioncommand.ExecutePlatformActionResult, error)
 }
 
+type ProxyCommandHandler interface {
+	Add(context.Context, proxycommand.AddProxyCommand) (map[string]any, error)
+	BulkAdd(context.Context, proxycommand.BulkAddProxiesCommand) (map[string]any, error)
+	Toggle(context.Context, proxycommand.ToggleProxyCommand) (map[string]any, error)
+	Delete(context.Context, proxycommand.DeleteProxyCommand) (map[string]any, error)
+	Check(context.Context, proxycommand.CheckProxiesCommand) (map[string]any, error)
+}
+
 func NewRouter(cfg viperconfig.AppConfig, logger zerolog.Logger) *gin.Engine {
 	db, err := sqliteadapter.Open(cfg.Database.URL)
 	if err != nil {
@@ -101,23 +152,32 @@ func buildDependencies(db *sql.DB, cfg viperconfig.AppConfig) Dependencies {
 	taskCommandRepo := sqliteadapter.NewTaskCommandRepository(db)
 	accountRepo := sqliteadapter.NewAccountRepository(db)
 	configRepo := sqliteadapter.NewConfigRepository(db)
+	proxyRepo := sqliteadapter.NewProxyRepository(db)
 	platformRepo := sqliteadapter.NewPlatformRepository(db, cfg.Platforms)
 	workerClient := workerhttp.New(cfg.Worker.BaseURL)
 	applyWorkerEvent := taskcommand.NewApplyWorkerEventHandler(taskCommandRepo)
+	integrationHandler := integrationcommand.NewHandler(workerClient)
 
 	return Dependencies{
 		ListTasks:         taskquery.NewHandler(taskRepo),
 		ListPlatforms:     platformquery.NewHandler(platformRepo),
+		ListProxies:       proxyquery.NewListProxiesHandler(proxyRepo),
 		ListAccounts:      accountquery.NewListAccountsHandler(accountRepo),
 		GetDashboardStats: accountquery.NewDashboardStatsHandler(accountRepo),
 		GetConfig:         configquery.NewGetConfigHandler(configRepo),
+		UpdateConfig:      configcommand.NewUpdateConfigHandler(configRepo),
 		GetTask:           taskquery.NewGetTaskHandler(taskRepo),
 		ListTaskLogs:      taskquery.NewListLogsHandler(taskRepo),
 		ListTaskEvents:    taskquery.NewListEventsHandler(taskRepo),
+		GetSolverStatus:   systemquery.NewSolverStatusHandler(workerClient),
+		RestartSolver:     systemcommand.NewRestartSolverHandler(workerClient),
+		ListIntegrationServices: integrationquery.NewListServicesHandler(workerClient),
 		CreateTask:        taskcommand.NewHandler(taskCommandRepo, workerClient, nil, nil, cfg.Server.PublicBaseURL),
 		ApplyWorkerEvent:  applyWorkerEvent,
 		CheckAccount:      accountcommand.NewCheckAccountHandler(accountRepo, workerClient),
 		ExecuteAction:     actioncommand.NewExecutePlatformActionHandler(accountRepo, workerClient),
+		ProxyCommands:     proxycommand.NewProxyCommandHandler(proxyRepo),
+		IntegrationCommands: integrationHandler,
 	}
 }
 
@@ -139,6 +199,9 @@ func NewRouterWithDependencies(cfg viperconfig.AppConfig, logger zerolog.Logger,
 type routeRegistrar interface {
 	GET(string, ...gin.HandlerFunc) gin.IRoutes
 	POST(string, ...gin.HandlerFunc) gin.IRoutes
+	PUT(string, ...gin.HandlerFunc) gin.IRoutes
+	PATCH(string, ...gin.HandlerFunc) gin.IRoutes
+	DELETE(string, ...gin.HandlerFunc) gin.IRoutes
 }
 
 func registerPublicRoutes(router routeRegistrar, deps Dependencies) {
@@ -312,6 +375,246 @@ func registerPublicRoutes(router routeRegistrar, deps Dependencies) {
 			return
 		}
 		result, err := deps.GetConfig.Handle(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	})
+
+	router.PUT("/config", func(c *gin.Context) {
+		if deps.UpdateConfig == nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "config update handler not configured"})
+			return
+		}
+		var cmd configcommand.UpdateConfigCommand
+		if err := c.ShouldBindJSON(&cmd); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		result, err := deps.UpdateConfig.Handle(c.Request.Context(), cmd)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	})
+
+	router.GET("/proxies", func(c *gin.Context) {
+		if deps.ListProxies == nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "proxies query handler not configured"})
+			return
+		}
+		result, err := deps.ListProxies.Handle(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	})
+
+	router.POST("/proxies", func(c *gin.Context) {
+		if deps.ProxyCommands == nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "proxy command handler not configured"})
+			return
+		}
+		var cmd proxycommand.AddProxyCommand
+		if err := c.ShouldBindJSON(&cmd); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		result, err := deps.ProxyCommands.Add(c.Request.Context(), cmd)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	})
+
+	router.POST("/proxies/bulk", func(c *gin.Context) {
+		if deps.ProxyCommands == nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "proxy command handler not configured"})
+			return
+		}
+		var cmd proxycommand.BulkAddProxiesCommand
+		if err := c.ShouldBindJSON(&cmd); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		result, err := deps.ProxyCommands.BulkAdd(c.Request.Context(), cmd)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	})
+
+	router.DELETE("/proxies/:proxyID", func(c *gin.Context) {
+		if deps.ProxyCommands == nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "proxy command handler not configured"})
+			return
+		}
+		proxyID, err := strconv.ParseInt(c.Param("proxyID"), 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid proxy id"})
+			return
+		}
+		result, err := deps.ProxyCommands.Delete(c.Request.Context(), proxycommand.DeleteProxyCommand{ProxyID: proxyID})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	})
+
+	router.PATCH("/proxies/:proxyID/toggle", func(c *gin.Context) {
+		if deps.ProxyCommands == nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "proxy command handler not configured"})
+			return
+		}
+		proxyID, err := strconv.ParseInt(c.Param("proxyID"), 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid proxy id"})
+			return
+		}
+		result, err := deps.ProxyCommands.Toggle(c.Request.Context(), proxycommand.ToggleProxyCommand{ProxyID: proxyID})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	})
+
+	router.POST("/proxies/check", func(c *gin.Context) {
+		if deps.ProxyCommands == nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "proxy command handler not configured"})
+			return
+		}
+		result, err := deps.ProxyCommands.Check(c.Request.Context(), proxycommand.CheckProxiesCommand{})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	})
+
+	router.GET("/solver/status", func(c *gin.Context) {
+		if deps.GetSolverStatus == nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "solver status handler not configured"})
+			return
+		}
+		result, err := deps.GetSolverStatus.Handle(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	})
+
+	router.POST("/solver/restart", func(c *gin.Context) {
+		if deps.RestartSolver == nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "solver restart handler not configured"})
+			return
+		}
+		result, err := deps.RestartSolver.Handle(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	})
+
+	router.GET("/integrations/services", func(c *gin.Context) {
+		if deps.ListIntegrationServices == nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "integration services handler not configured"})
+			return
+		}
+		result, err := deps.ListIntegrationServices.Handle(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	})
+
+	router.POST("/integrations/services/start-all", func(c *gin.Context) {
+		if deps.IntegrationCommands == nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "integration command handler not configured"})
+			return
+		}
+		result, err := deps.IntegrationCommands.StartAll(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	})
+
+	router.POST("/integrations/services/stop-all", func(c *gin.Context) {
+		if deps.IntegrationCommands == nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "integration command handler not configured"})
+			return
+		}
+		result, err := deps.IntegrationCommands.StopAll(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	})
+
+	router.POST("/integrations/services/:name/start", func(c *gin.Context) {
+		if deps.IntegrationCommands == nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "integration command handler not configured"})
+			return
+		}
+		result, err := deps.IntegrationCommands.Start(c.Request.Context(), c.Param("name"))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	})
+
+	router.POST("/integrations/services/:name/install", func(c *gin.Context) {
+		if deps.IntegrationCommands == nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "integration command handler not configured"})
+			return
+		}
+		result, err := deps.IntegrationCommands.Install(c.Request.Context(), c.Param("name"))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	})
+
+	router.POST("/integrations/services/:name/stop", func(c *gin.Context) {
+		if deps.IntegrationCommands == nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "integration command handler not configured"})
+			return
+		}
+		result, err := deps.IntegrationCommands.Stop(c.Request.Context(), c.Param("name"))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	})
+
+	router.POST("/integrations/backfill", func(c *gin.Context) {
+		if deps.IntegrationCommands == nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "integration command handler not configured"})
+			return
+		}
+		var body struct {
+			Platforms []string `json:"platforms"`
+		}
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		result, err := deps.IntegrationCommands.Backfill(c.Request.Context(), body.Platforms)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return

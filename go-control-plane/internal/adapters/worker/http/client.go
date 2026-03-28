@@ -50,6 +50,78 @@ func (c Client) ExecuteAction(ctx context.Context, req workerport.ExecuteActionR
 	return payload, nil
 }
 
+func (c Client) GetSolverStatus(ctx context.Context) (workerport.SolverStatusResponse, error) {
+	var payload workerport.SolverStatusResponse
+	if err := c.get(ctx, "/api/solver/status", &payload); err != nil {
+		return workerport.SolverStatusResponse{}, err
+	}
+	return payload, nil
+}
+
+func (c Client) RestartSolver(ctx context.Context) (map[string]any, error) {
+	var payload map[string]any
+	if err := c.post(ctx, "/api/solver/restart", map[string]any{}, &payload); err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+func (c Client) ListIntegrationServices(ctx context.Context) (workerport.IntegrationServicesResponse, error) {
+	var payload workerport.IntegrationServicesResponse
+	if err := c.get(ctx, "/api/integrations/services", &payload); err != nil {
+		return workerport.IntegrationServicesResponse{}, err
+	}
+	return payload, nil
+}
+
+func (c Client) StartAllIntegrationServices(ctx context.Context) (workerport.IntegrationServicesResponse, error) {
+	var payload workerport.IntegrationServicesResponse
+	if err := c.post(ctx, "/api/integrations/services/start-all", map[string]any{}, &payload); err != nil {
+		return workerport.IntegrationServicesResponse{}, err
+	}
+	return payload, nil
+}
+
+func (c Client) StopAllIntegrationServices(ctx context.Context) (workerport.IntegrationServicesResponse, error) {
+	var payload workerport.IntegrationServicesResponse
+	if err := c.post(ctx, "/api/integrations/services/stop-all", map[string]any{}, &payload); err != nil {
+		return workerport.IntegrationServicesResponse{}, err
+	}
+	return payload, nil
+}
+
+func (c Client) StartIntegrationService(ctx context.Context, name string) (map[string]any, error) {
+	var payload map[string]any
+	if err := c.post(ctx, "/api/integrations/services/"+name+"/start", map[string]any{}, &payload); err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+func (c Client) InstallIntegrationService(ctx context.Context, name string) (map[string]any, error) {
+	var payload map[string]any
+	if err := c.post(ctx, "/api/integrations/services/"+name+"/install", map[string]any{}, &payload); err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+func (c Client) StopIntegrationService(ctx context.Context, name string) (map[string]any, error) {
+	var payload map[string]any
+	if err := c.post(ctx, "/api/integrations/services/"+name+"/stop", map[string]any{}, &payload); err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+func (c Client) BackfillIntegrations(ctx context.Context, platforms []string) (map[string]any, error) {
+	var payload map[string]any
+	if err := c.post(ctx, "/api/integrations/backfill", map[string]any{"platforms": platforms}, &payload); err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
 func (c Client) post(ctx context.Context, path string, reqBody any, out any) error {
 	body, err := json.Marshal(reqBody)
 	if err != nil {
@@ -87,6 +159,25 @@ func (c Client) post(ctx context.Context, path string, reqBody any, out any) err
 				return errors.New(v.Error)
 			}
 		}
+		return errors.New(resp.Status)
+	}
+	return nil
+}
+
+func (c Client) get(ctx context.Context, path string, out any) error {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return err
+	}
+	if resp.StatusCode >= 400 {
 		return errors.New(resp.Status)
 	}
 	return nil

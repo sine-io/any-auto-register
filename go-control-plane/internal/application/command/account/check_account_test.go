@@ -31,6 +31,31 @@ func (f fakeCheckWorkerClient) Register(context.Context, workerport.RegisterRequ
 func (f fakeCheckWorkerClient) ExecuteAction(context.Context, workerport.ExecuteActionRequest) (workerport.ExecuteActionResponse, error) {
 	return workerport.ExecuteActionResponse{}, nil
 }
+func (f fakeCheckWorkerClient) GetSolverStatus(context.Context) (workerport.SolverStatusResponse, error) {
+	return workerport.SolverStatusResponse{}, nil
+}
+func (f fakeCheckWorkerClient) RestartSolver(context.Context) (map[string]any, error) { return map[string]any{}, nil }
+func (f fakeCheckWorkerClient) ListIntegrationServices(context.Context) (workerport.IntegrationServicesResponse, error) {
+	return workerport.IntegrationServicesResponse{}, nil
+}
+func (f fakeCheckWorkerClient) StartAllIntegrationServices(context.Context) (workerport.IntegrationServicesResponse, error) {
+	return workerport.IntegrationServicesResponse{}, nil
+}
+func (f fakeCheckWorkerClient) StopAllIntegrationServices(context.Context) (workerport.IntegrationServicesResponse, error) {
+	return workerport.IntegrationServicesResponse{}, nil
+}
+func (f fakeCheckWorkerClient) StartIntegrationService(context.Context, string) (map[string]any, error) {
+	return map[string]any{}, nil
+}
+func (f fakeCheckWorkerClient) InstallIntegrationService(context.Context, string) (map[string]any, error) {
+	return map[string]any{}, nil
+}
+func (f fakeCheckWorkerClient) StopIntegrationService(context.Context, string) (map[string]any, error) {
+	return map[string]any{}, nil
+}
+func (f fakeCheckWorkerClient) BackfillIntegrations(context.Context, []string) (map[string]any, error) {
+	return map[string]any{}, nil
+}
 
 func TestCheckAccountUsesStoredPlatform(t *testing.T) {
 	handler := NewCheckAccountHandler(

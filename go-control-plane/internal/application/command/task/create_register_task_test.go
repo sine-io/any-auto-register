@@ -54,6 +54,31 @@ func (f fakeWorkerClient) CheckAccount(context.Context, workerport.CheckAccountR
 func (f fakeWorkerClient) ExecuteAction(context.Context, workerport.ExecuteActionRequest) (workerport.ExecuteActionResponse, error) {
 	return workerport.ExecuteActionResponse{}, nil
 }
+func (f fakeWorkerClient) GetSolverStatus(context.Context) (workerport.SolverStatusResponse, error) {
+	return workerport.SolverStatusResponse{}, nil
+}
+func (f fakeWorkerClient) RestartSolver(context.Context) (map[string]any, error) { return map[string]any{}, nil }
+func (f fakeWorkerClient) ListIntegrationServices(context.Context) (workerport.IntegrationServicesResponse, error) {
+	return workerport.IntegrationServicesResponse{}, nil
+}
+func (f fakeWorkerClient) StartAllIntegrationServices(context.Context) (workerport.IntegrationServicesResponse, error) {
+	return workerport.IntegrationServicesResponse{}, nil
+}
+func (f fakeWorkerClient) StopAllIntegrationServices(context.Context) (workerport.IntegrationServicesResponse, error) {
+	return workerport.IntegrationServicesResponse{}, nil
+}
+func (f fakeWorkerClient) StartIntegrationService(context.Context, string) (map[string]any, error) {
+	return map[string]any{}, nil
+}
+func (f fakeWorkerClient) InstallIntegrationService(context.Context, string) (map[string]any, error) {
+	return map[string]any{}, nil
+}
+func (f fakeWorkerClient) StopIntegrationService(context.Context, string) (map[string]any, error) {
+	return map[string]any{}, nil
+}
+func (f fakeWorkerClient) BackfillIntegrations(context.Context, []string) (map[string]any, error) {
+	return map[string]any{}, nil
+}
 
 func TestHandleCreatesAndCompletesTaskUsingWorkerResponse(t *testing.T) {
 	repo := &fakeCommandRepository{}
@@ -175,6 +200,31 @@ func (f *capturingWorkerClient) CheckAccount(context.Context, workerport.CheckAc
 func (f *capturingWorkerClient) ExecuteAction(context.Context, workerport.ExecuteActionRequest) (workerport.ExecuteActionResponse, error) {
 	return workerport.ExecuteActionResponse{}, nil
 }
+func (f *capturingWorkerClient) GetSolverStatus(context.Context) (workerport.SolverStatusResponse, error) {
+	return workerport.SolverStatusResponse{}, nil
+}
+func (f *capturingWorkerClient) RestartSolver(context.Context) (map[string]any, error) { return map[string]any{}, nil }
+func (f *capturingWorkerClient) ListIntegrationServices(context.Context) (workerport.IntegrationServicesResponse, error) {
+	return workerport.IntegrationServicesResponse{}, nil
+}
+func (f *capturingWorkerClient) StartAllIntegrationServices(context.Context) (workerport.IntegrationServicesResponse, error) {
+	return workerport.IntegrationServicesResponse{}, nil
+}
+func (f *capturingWorkerClient) StopAllIntegrationServices(context.Context) (workerport.IntegrationServicesResponse, error) {
+	return workerport.IntegrationServicesResponse{}, nil
+}
+func (f *capturingWorkerClient) StartIntegrationService(context.Context, string) (map[string]any, error) {
+	return map[string]any{}, nil
+}
+func (f *capturingWorkerClient) InstallIntegrationService(context.Context, string) (map[string]any, error) {
+	return map[string]any{}, nil
+}
+func (f *capturingWorkerClient) StopIntegrationService(context.Context, string) (map[string]any, error) {
+	return map[string]any{}, nil
+}
+func (f *capturingWorkerClient) BackfillIntegrations(context.Context, []string) (map[string]any, error) {
+	return map[string]any{}, nil
+}
 
 type blockingWorkerClient struct {
 	release  chan struct{}
@@ -192,4 +242,29 @@ func (f *blockingWorkerClient) CheckAccount(context.Context, workerport.CheckAcc
 
 func (f *blockingWorkerClient) ExecuteAction(context.Context, workerport.ExecuteActionRequest) (workerport.ExecuteActionResponse, error) {
 	return workerport.ExecuteActionResponse{}, nil
+}
+func (f *blockingWorkerClient) GetSolverStatus(context.Context) (workerport.SolverStatusResponse, error) {
+	return workerport.SolverStatusResponse{}, nil
+}
+func (f *blockingWorkerClient) RestartSolver(context.Context) (map[string]any, error) { return map[string]any{}, nil }
+func (f *blockingWorkerClient) ListIntegrationServices(context.Context) (workerport.IntegrationServicesResponse, error) {
+	return workerport.IntegrationServicesResponse{}, nil
+}
+func (f *blockingWorkerClient) StartAllIntegrationServices(context.Context) (workerport.IntegrationServicesResponse, error) {
+	return workerport.IntegrationServicesResponse{}, nil
+}
+func (f *blockingWorkerClient) StopAllIntegrationServices(context.Context) (workerport.IntegrationServicesResponse, error) {
+	return workerport.IntegrationServicesResponse{}, nil
+}
+func (f *blockingWorkerClient) StartIntegrationService(context.Context, string) (map[string]any, error) {
+	return map[string]any{}, nil
+}
+func (f *blockingWorkerClient) InstallIntegrationService(context.Context, string) (map[string]any, error) {
+	return map[string]any{}, nil
+}
+func (f *blockingWorkerClient) StopIntegrationService(context.Context, string) (map[string]any, error) {
+	return map[string]any{}, nil
+}
+func (f *blockingWorkerClient) BackfillIntegrations(context.Context, []string) (map[string]any, error) {
+	return map[string]any{}, nil
 }

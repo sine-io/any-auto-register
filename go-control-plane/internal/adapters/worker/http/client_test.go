@@ -88,3 +88,37 @@ func TestClientExecuteActionParsesWorkerResponse(t *testing.T) {
 		t.Fatalf("unexpected action response: %#v", result)
 	}
 }
+
+func TestClientGetsSolverStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/solver/status" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(workerport.SolverStatusResponse{Running: true})
+	}))
+	defer server.Close()
+
+	client := New(server.URL)
+	result, err := client.GetSolverStatus(context.Background())
+	if err != nil || !result.Running {
+		t.Fatalf("unexpected solver status: %#v err=%v", result, err)
+	}
+}
+
+func TestClientListsIntegrationServices(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/integrations/services" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(workerport.IntegrationServicesResponse{
+			Items: []map[string]any{{"name": "grok2api", "running": true}},
+		})
+	}))
+	defer server.Close()
+
+	client := New(server.URL)
+	result, err := client.ListIntegrationServices(context.Background())
+	if err != nil || len(result.Items) != 1 {
+		t.Fatalf("unexpected integration services: %#v err=%v", result, err)
+	}
+}
