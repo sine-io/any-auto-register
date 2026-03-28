@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
-import { useState, useEffect } from 'react'
-import { ConfigProvider, Layout, Menu, Button } from 'antd'
+import { lazy, Suspense, useState, useEffect } from 'react'
+import { ConfigProvider, Layout, Menu, Button, Spin } from 'antd'
 import {
   DashboardOutlined,
   UserOutlined,
@@ -11,22 +11,24 @@ import {
   MoonOutlined,
 } from '@ant-design/icons'
 import zhCN from 'antd/locale/zh_CN'
-import Dashboard from '@/pages/Dashboard'
-import Accounts from '@/pages/Accounts'
-import Register from '@/pages/Register'
-import Proxies from '@/pages/Proxies'
-import Settings from '@/pages/Settings'
-import TaskHistory from '@/pages/TaskHistory'
+import { apiFetch } from '@/lib/utils'
+import type { PlatformMeta } from '@/lib/registerOptions'
 import { darkTheme, lightTheme } from './theme'
 
 const { Sider, Content } = Layout
+const Dashboard = lazy(() => import('@/pages/Dashboard'))
+const Accounts = lazy(() => import('@/pages/Accounts'))
+const Register = lazy(() => import('@/pages/Register'))
+const Proxies = lazy(() => import('@/pages/Proxies'))
+const Settings = lazy(() => import('@/pages/Settings'))
+const TaskHistory = lazy(() => import('@/pages/TaskHistory'))
 
 function AppContent() {
   const [themeMode, setThemeMode] = useState<'dark' | 'light'>(() =>
     (localStorage.getItem('theme') as 'dark' | 'light') || 'dark'
   )
   const [collapsed, setCollapsed] = useState(false)
-  const [platforms, setPlatforms] = useState<{ key: string; label: string }[]>([])
+  const [platforms, setPlatforms] = useState<PlatformMeta[]>([])
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -40,11 +42,9 @@ function AppContent() {
   }, [themeMode])
 
   useEffect(() => {
-    fetch('/api/platforms')
-      .then(r => r.json())
-      .then(d => setPlatforms((d || [])
-        .filter((p: any) => p.name !== 'tavily')
-        .map((p: any) => ({ key: p.name, label: p.display_name }))))
+    apiFetch('/platforms')
+      .then((items) => setPlatforms(items || []))
+      .catch(() => setPlatforms([]))
   }, [])
 
   const isLight = themeMode === 'light'
@@ -71,8 +71,8 @@ function AppContent() {
       icon: <UserOutlined />,
       label: '平台管理',
       children: platforms.map(p => ({
-        key: `/accounts/${p.key}`,
-        label: p.label,
+        key: `/accounts/${p.name}`,
+        label: p.available === false ? `${p.display_name} (不可用)` : p.display_name,
       })),
     },
     {
@@ -169,15 +169,23 @@ function AppContent() {
             background: currentTheme.token?.colorBgLayout,
           }}
         >
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/accounts" element={<Accounts />} />
-            <Route path="/accounts/:platform" element={<Accounts />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/history" element={<TaskHistory />} />
-            <Route path="/proxies" element={<Proxies />} />
-            <Route path="/settings" element={<Settings />} />
-          </Routes>
+          <Suspense
+            fallback={
+              <div style={{ minHeight: 320, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Spin size="large" />
+              </div>
+            }
+          >
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/accounts" element={<Accounts />} />
+              <Route path="/accounts/:platform" element={<Accounts />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/history" element={<TaskHistory />} />
+              <Route path="/proxies" element={<Proxies />} />
+              <Route path="/settings" element={<Settings />} />
+            </Routes>
+          </Suspense>
         </Content>
       </Layout>
     </ConfigProvider>

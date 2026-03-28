@@ -3,6 +3,7 @@ import { Card, Table, Select, Button, Tag, Space, Popconfirm, Typography, messag
 import type { TableColumnsType } from 'antd'
 import { ReloadOutlined, DeleteOutlined } from '@ant-design/icons'
 import { apiFetch } from '@/lib/utils'
+import type { PlatformMeta } from '@/lib/registerOptions'
 
 const { Text } = Typography
 
@@ -30,8 +31,15 @@ export default function TaskHistory() {
   const [logs, setLogs] = useState<TaskLogItem[]>([])
   const [total, setTotal] = useState(0)
   const [platform, setPlatform] = useState('')
+  const [platforms, setPlatforms] = useState<PlatformMeta[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedRowKeys, setSelectedRowKeys] = useState<number[]>([])
+
+  useEffect(() => {
+    apiFetch('/platforms')
+      .then((items) => setPlatforms(items || []))
+      .catch(() => setPlatforms([]))
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -136,8 +144,10 @@ export default function TaskHistory() {
             style={{ width: 120 }}
             options={[
               { value: '', label: '全部平台' },
-              { value: 'trae', label: 'Trae' },
-              { value: 'cursor', label: 'Cursor' },
+              ...platforms.map((item) => ({
+                value: item.name,
+                label: item.display_name,
+              })),
             ]}
           />
           <Button icon={<ReloadOutlined spin={loading} />} onClick={load} loading={loading} />

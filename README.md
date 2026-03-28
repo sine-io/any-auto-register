@@ -171,6 +171,20 @@ conda activate any-auto-register
 python main.py
 ```
 
+### 数据库路径
+
+后端默认使用：
+
+```text
+account_manager.db
+```
+
+如果你想自定义数据库位置，可通过环境变量覆盖：
+
+```bash
+APP_DB_URL=sqlite:////absolute/path/to/account_manager.db
+```
+
 ### 启动后访问
 
 如果你已经执行过 `npm run build`，直接访问：
@@ -206,13 +220,24 @@ stop_backend.bat
 
 适合改 React 页面时使用。
 
-### 终端 1：启动后端
+### 终端 1：启动 Python Worker / 旧后端
 
 ```powershell
 .\start_backend.ps1
 ```
 
-### 终端 2：启动 Vite
+### 终端 2：启动 Go 控制面
+
+```bash
+cd go-control-plane
+AAR_SERVER_PORT=8080 \
+AAR_SERVER_PUBLIC_BASE_URL=http://127.0.0.1:8080 \
+AAR_WORKER_BASE_URL=http://127.0.0.1:8000 \
+AAR_DATABASE_URL=../account_manager.db \
+go run ./cmd/server server
+```
+
+### 终端 3：启动 Vite
 
 ```bash
 cd frontend
@@ -225,7 +250,79 @@ npm run dev
 http://localhost:5173
 ```
 
-Vite 会把 `/api` 代理到本地后端 `http://localhost:8000`。
+开发模式下默认：
+
+- `/api` -> Python Worker / 旧后端 `http://127.0.0.1:8000`
+- `/api-go` -> Go 控制面 `http://127.0.0.1:8080`
+
+前端内部已经按路径分流：
+
+- 只读查询优先走 Go 控制面
+- 其余请求继续走 Python
+
+如果你想覆盖默认代理地址，可修改：
+
+```text
+frontend/.env.development
+```
+
+***
+
+## Docker 运行
+
+`docker-compose.yml` 已经默认把数据库指向：
+
+```text
+/app/data/account_manager.db
+```
+
+因此 compose 里的这条挂载会真正持久化 SQLite：
+
+```yaml
+volumes:
+  - ./data:/app/data
+```
+
+如果你自行改了容器内数据库路径，记得同步修改 `APP_DB_URL`。
+
+***
+
+## Go 控制面双后端部署
+
+如果你要让前端查询和任务流量优先走 Go 控制面，同时保留 Python Worker 执行平台注册，可使用：
+
+```bash
+docker compose -f docker-compose.control-plane.yml up --build
+```
+
+这套部署会启动 3 个服务：
+
+- `python-worker`：保留浏览器自动化、邮箱、验证码和平台执行逻辑
+- `go-control-plane`：负责查询接口、任务创建、任务状态和 worker 回调
+- `gateway`：统一暴露 `8000` 端口
+
+对外访问：
+
+```text
+http://localhost:8000
+```
+
+路径分流规则：
+
+- `/api-go/*` -> Go 控制面
+- 其余请求 -> Python Worker / 现有静态页面服务
+
+当前 compose 中前端构建参数已设置为：
+
+- `VITE_PY_API_BASE=/api`
+- `VITE_GO_API_BASE=/api-go`
+
+因此，前端静态资源在这套部署下会自动把已迁移的查询与任务接口发送到 Go。
+
+> 注意：
+>
+> - `docker-compose.control-plane.yml` 是新增的双后端部署方案，不会替换原来的单 Python 部署
+> - `AAR_SERVER_PUBLIC_BASE_URL` 默认写的是 `http://127.0.0.1:8000`，如果你用域名或反向代理，请同步修改
 
 ***
 

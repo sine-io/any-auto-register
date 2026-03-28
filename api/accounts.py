@@ -18,12 +18,14 @@ class AccountCreate(BaseModel):
     password: str
     status: str = "registered"
     token: str = ""
+    trial_end_time: int = 0
     cashier_url: str = ""
 
 
 class AccountUpdate(BaseModel):
     status: Optional[str] = None
     token: Optional[str] = None
+    trial_end_time: Optional[int] = None
     cashier_url: Optional[str] = None
 
 
@@ -46,13 +48,17 @@ def list_accounts(
     session: Session = Depends(get_session),
 ):
     q = select(AccountModel)
+    count_q = select(func.count()).select_from(AccountModel)
     if platform:
         q = q.where(AccountModel.platform == platform)
+        count_q = count_q.where(AccountModel.platform == platform)
     if status:
         q = q.where(AccountModel.status == status)
+        count_q = count_q.where(AccountModel.status == status)
     if email:
         q = q.where(AccountModel.email.contains(email))
-    total = len(session.exec(q).all())
+        count_q = count_q.where(AccountModel.email.contains(email))
+    total = session.exec(count_q).one()
     items = session.exec(q.offset((page - 1) * page_size).limit(page_size)).all()
     return {"total": total, "page": page, "items": items}
 
@@ -65,6 +71,7 @@ def create_account(body: AccountCreate, session: Session = Depends(get_session))
         password=body.password,
         status=body.status,
         token=body.token,
+        trial_end_time=body.trial_end_time,
         cashier_url=body.cashier_url,
     )
     session.add(acc)
@@ -76,13 +83,20 @@ def create_account(body: AccountCreate, session: Session = Depends(get_session))
 @router.get("/stats")
 def get_stats(session: Session = Depends(get_session)):
     """统计各平台账号数量和状态分布"""
-    accounts = session.exec(select(AccountModel)).all()
-    platforms: dict = {}
-    statuses: dict = {}
-    for acc in accounts:
-        platforms[acc.platform] = platforms.get(acc.platform, 0) + 1
-        statuses[acc.status] = statuses.get(acc.status, 0) + 1
-    return {"total": len(accounts), "by_platform": platforms, "by_status": statuses}
+    total = session.exec(select(func.count()).select_from(AccountModel)).one()
+    platform_rows = session.exec(
+        select(AccountModel.platform, func.count())
+        .group_by(AccountModel.platform)
+    ).all()
+    status_rows = session.exec(
+        select(AccountModel.status, func.count())
+        .group_by(AccountModel.status)
+    ).all()
+    return {
+        "total": total,
+        "by_platform": {platform: count for platform, count in platform_rows},
+        "by_status": {status: count for status, count in status_rows},
+    }
 
 
 @router.get("/export")
@@ -206,6 +220,8 @@ def update_account(account_id: int, body: AccountUpdate,
         acc.status = body.status
     if body.token is not None:
         acc.token = body.token
+    if body.trial_end_time is not None:
+        acc.trial_end_time = body.trial_end_time
     if body.cashier_url is not None:
         acc.cashier_url = body.cashier_url
     acc.updated_at = datetime.now(timezone.utc)

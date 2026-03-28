@@ -26,8 +26,8 @@ import {
   MoreOutlined,
   DeleteOutlined,
 } from '@ant-design/icons'
-import { apiFetch, API_BASE } from '@/lib/utils'
-import { normalizeExecutorForPlatform } from '@/lib/registerOptions'
+import { apiFetch, getApiBase } from '@/lib/utils'
+import { normalizeExecutorForPlatform, type PlatformMeta } from '@/lib/registerOptions'
 
 const { Text } = Typography
 
@@ -54,7 +54,8 @@ function LogPanel({ taskId, onDone }: { taskId: string; onDone: () => void }) {
 
   useEffect(() => {
     if (!taskId) return
-    const es = new EventSource(`${API_BASE}/tasks/${taskId}/logs/stream`)
+    const streamPath = `/tasks/${taskId}/logs/stream`
+    const es = new EventSource(`${getApiBase(streamPath, 'GET')}${streamPath}`)
     es.onmessage = (e) => {
       const d = JSON.parse(e.data)
       if (d.line) setLines((prev) => [...prev, d.line])
@@ -149,7 +150,10 @@ function ActionMenu({ acc, onRefresh }: { acc: any; onRefresh: () => void }) {
 
   const menuItems: MenuProps['items'] = actions.map((a) => ({
     key: a.id,
-    label: a.label,
+    label: a.available === false && a.availability_reason
+      ? `${a.label}（${a.availability_reason}）`
+      : a.label,
+    disabled: a.available === false,
     onClick: () => handleAction(a.id),
   }))
 
@@ -166,6 +170,7 @@ export default function Accounts() {
   const { platform } = useParams<{ platform: string }>()
   const [currentPlatform, setCurrentPlatform] = useState(platform || 'trae')
   const [accounts, setAccounts] = useState<any[]>([])
+  const [platforms, setPlatforms] = useState<PlatformMeta[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
@@ -189,6 +194,12 @@ export default function Accounts() {
   useEffect(() => {
     if (platform) setCurrentPlatform(platform)
   }, [platform])
+
+  useEffect(() => {
+    apiFetch('/platforms')
+      .then((items) => setPlatforms(items || []))
+      .catch(() => setPlatforms([]))
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -279,7 +290,7 @@ export default function Accounts() {
     setRegisterLoading(true)
     try {
       const cfg = await apiFetch('/config')
-      const executorType = normalizeExecutorForPlatform(currentPlatform, cfg.default_executor)
+      const executorType = normalizeExecutorForPlatform(currentPlatform, cfg.default_executor, platforms)
       const res = await apiFetch('/tasks/register', {
         method: 'POST',
         body: JSON.stringify({

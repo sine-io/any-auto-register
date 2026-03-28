@@ -1,6 +1,10 @@
 # Stage 1: 构建前端
 FROM node:20-slim AS frontend-builder
 WORKDIR /app/frontend
+ARG VITE_PY_API_BASE=/api
+ARG VITE_GO_API_BASE=/api
+ENV VITE_PY_API_BASE=$VITE_PY_API_BASE
+ENV VITE_GO_API_BASE=$VITE_GO_API_BASE
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ ./

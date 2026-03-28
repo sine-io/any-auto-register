@@ -15,6 +15,7 @@ from api.proxies import router as proxies_router
 from api.config import router as config_router
 from api.actions import router as actions_router
 from api.integrations import router as integrations_router
+from api.worker import router as worker_router
 
 EXPECTED_CONDA_ENV = os.getenv("APP_CONDA_ENV", "any-auto-register")
 
@@ -58,9 +59,13 @@ async def lifespan(app: FastAPI):
     print(f"[OK] 已加载平台: {[p['name'] for p in list_platforms()]}")
     from core.scheduler import scheduler
     scheduler.start()
+    from api.tasks import start_task_event_flusher
+    start_task_event_flusher()
     from services.solver_manager import start_async
     start_async()
     yield
+    from api.tasks import stop_task_event_flusher
+    stop_task_event_flusher()
     from core.scheduler import scheduler as _scheduler
     _scheduler.stop()
     from services.solver_manager import stop
@@ -83,6 +88,7 @@ app.include_router(proxies_router, prefix="/api")
 app.include_router(config_router, prefix="/api")
 app.include_router(actions_router, prefix="/api")
 app.include_router(integrations_router, prefix="/api")
+app.include_router(worker_router, prefix="/api")
 
 
 @app.get("/api/solver/status")

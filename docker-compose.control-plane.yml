@@ -1,0 +1,43 @@
+services:
+  python-worker:
+    build:
+      context: .
+      args:
+        VITE_PY_API_BASE: /api
+        VITE_GO_API_BASE: /api-go
+    environment:
+      - DISPLAY=:99
+      - APP_DB_URL=sqlite:////app/data/account_manager.db
+    volumes:
+      - ./data:/app/data
+    expose:
+      - "8000"
+    ports:
+      - "6080:6080"
+    restart: unless-stopped
+
+  go-control-plane:
+    build:
+      context: ./go-control-plane
+    environment:
+      - AAR_SERVER_HOST=0.0.0.0
+      - AAR_SERVER_PORT=8080
+      - AAR_SERVER_PUBLIC_BASE_URL=http://127.0.0.1:8000
+      - AAR_WORKER_BASE_URL=http://python-worker:8000
+      - AAR_DATABASE_URL=sqlite:////app/data/account_manager.db
+    volumes:
+      - ./data:/app/data
+    expose:
+      - "8080"
+    restart: unless-stopped
+
+  gateway:
+    image: caddy:2-alpine
+    depends_on:
+      - python-worker
+      - go-control-plane
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
