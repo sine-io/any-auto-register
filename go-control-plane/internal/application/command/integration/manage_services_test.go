@@ -18,6 +18,9 @@ func (fakeIntegrationCommandWorker) CheckAccount(context.Context, workerport.Che
 func (fakeIntegrationCommandWorker) ExecuteAction(context.Context, workerport.ExecuteActionRequest) (workerport.ExecuteActionResponse, error) {
 	return workerport.ExecuteActionResponse{}, nil
 }
+func (fakeIntegrationCommandWorker) ListActions(context.Context, string) (workerport.ListActionsResponse, error) {
+	return workerport.ListActionsResponse{}, nil
+}
 func (fakeIntegrationCommandWorker) GetSolverStatus(context.Context) (workerport.SolverStatusResponse, error) {
 	return workerport.SolverStatusResponse{}, nil
 }

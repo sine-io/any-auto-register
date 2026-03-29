@@ -122,3 +122,21 @@ func TestClientListsIntegrationServices(t *testing.T) {
 		t.Fatalf("unexpected integration services: %#v err=%v", result, err)
 	}
 }
+
+func TestClientListsActions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/worker/actions/dummy" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(workerport.ListActionsResponse{
+			Actions: []map[string]any{{"id": "sync_external", "available": true}},
+		})
+	}))
+	defer server.Close()
+
+	client := New(server.URL)
+	result, err := client.ListActions(context.Background(), "dummy")
+	if err != nil || len(result.Actions) != 1 {
+		t.Fatalf("unexpected actions result: %#v err=%v", result, err)
+	}
+}

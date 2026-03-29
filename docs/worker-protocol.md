@@ -66,12 +66,11 @@
 
 ### Response
 
-当前为占位接口：
-
 ```json
 {
-  "ok": false,
-  "error": "not implemented"
+  "ok": true,
+  "valid": true,
+  "error": ""
 }
 ```
 
@@ -92,16 +91,38 @@
 
 ### Response
 
-当前为占位接口：
+```json
+{
+  "ok": true,
+  "data": {
+    "message": "done"
+  },
+  "error": ""
+}
+```
+
+## 4. List Actions
+
+### Request
+
+`GET /api/worker/actions/{platform}`
+
+### Response
 
 ```json
 {
-  "ok": false,
-  "error": "not implemented"
+  "actions": [
+    {
+      "id": "sync_external",
+      "label": "同步外部系统",
+      "available": true,
+      "availability_reason": ""
+    }
+  ]
 }
 ```
 
 ## Notes
 
-- 当前 `register` 已实现并可供 Go 控制面同步调用
-- `check-account` / `execute-action` 只完成了协议占位，后续由 Go 控制面接入对应 command/query 后再补全
+- 当前 `register`、`check-account`、`execute-action`、`actions/{platform}` 都已经可供 Go 控制面调用
+- 前端不应直接调用这些 worker 接口；它们属于 Go 控制面和 Python Worker 之间的内部协议

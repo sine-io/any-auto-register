@@ -50,6 +50,14 @@ func (c Client) ExecuteAction(ctx context.Context, req workerport.ExecuteActionR
 	return payload, nil
 }
 
+func (c Client) ListActions(ctx context.Context, platform string) (workerport.ListActionsResponse, error) {
+	var payload workerport.ListActionsResponse
+	if err := c.get(ctx, "/api/worker/actions/"+platform, &payload); err != nil {
+		return workerport.ListActionsResponse{}, err
+	}
+	return payload, nil
+}
+
 func (c Client) GetSolverStatus(ctx context.Context) (workerport.SolverStatusResponse, error) {
 	var payload workerport.SolverStatusResponse
 	if err := c.get(ctx, "/api/solver/status", &payload); err != nil {

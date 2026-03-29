@@ -54,6 +54,9 @@ func (f fakeWorkerClient) CheckAccount(context.Context, workerport.CheckAccountR
 func (f fakeWorkerClient) ExecuteAction(context.Context, workerport.ExecuteActionRequest) (workerport.ExecuteActionResponse, error) {
 	return workerport.ExecuteActionResponse{}, nil
 }
+func (f fakeWorkerClient) ListActions(context.Context, string) (workerport.ListActionsResponse, error) {
+	return workerport.ListActionsResponse{}, nil
+}
 func (f fakeWorkerClient) GetSolverStatus(context.Context) (workerport.SolverStatusResponse, error) {
 	return workerport.SolverStatusResponse{}, nil
 }
@@ -205,6 +208,9 @@ func (f *capturingWorkerClient) CheckAccount(context.Context, workerport.CheckAc
 func (f *capturingWorkerClient) ExecuteAction(context.Context, workerport.ExecuteActionRequest) (workerport.ExecuteActionResponse, error) {
 	return workerport.ExecuteActionResponse{}, nil
 }
+func (f *capturingWorkerClient) ListActions(context.Context, string) (workerport.ListActionsResponse, error) {
+	return workerport.ListActionsResponse{}, nil
+}
 func (f *capturingWorkerClient) GetSolverStatus(context.Context) (workerport.SolverStatusResponse, error) {
 	return workerport.SolverStatusResponse{}, nil
 }
@@ -249,6 +255,9 @@ func (f *blockingWorkerClient) CheckAccount(context.Context, workerport.CheckAcc
 
 func (f *blockingWorkerClient) ExecuteAction(context.Context, workerport.ExecuteActionRequest) (workerport.ExecuteActionResponse, error) {
 	return workerport.ExecuteActionResponse{}, nil
+}
+func (f *blockingWorkerClient) ListActions(context.Context, string) (workerport.ListActionsResponse, error) {
+	return workerport.ListActionsResponse{}, nil
 }
 func (f *blockingWorkerClient) GetSolverStatus(context.Context) (workerport.SolverStatusResponse, error) {
 	return workerport.SolverStatusResponse{}, nil

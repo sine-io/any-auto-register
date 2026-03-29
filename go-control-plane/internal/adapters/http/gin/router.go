@@ -19,6 +19,7 @@ import (
 	systemcommand "go-control-plane/internal/application/command/system"
 	taskcommand "go-control-plane/internal/application/command/task"
 	accountquery "go-control-plane/internal/application/query/account"
+	actionquery "go-control-plane/internal/application/query/action"
 	configquery "go-control-plane/internal/application/query/config"
 	integrationquery "go-control-plane/internal/application/query/integration"
 	platformquery "go-control-plane/internal/application/query/platform"
@@ -36,6 +37,10 @@ type TaskQueryHandler interface {
 
 type PlatformQueryHandler interface {
 	Handle(context.Context) (platformquery.Result, error)
+}
+
+type ActionListHandler interface {
+	Handle(context.Context, string) (actionquery.ListActionsResult, error)
 }
 
 type ListProxiesHandler interface {
@@ -94,6 +99,7 @@ type IntegrationCommandHandler interface {
 type Dependencies struct {
 	ListTasks               TaskQueryHandler
 	ListPlatforms           PlatformQueryHandler
+	ListActions             ActionListHandler
 	ListProxies             ListProxiesHandler
 	ListAccounts            ListAccountsHandler
 	GetDashboardStats       DashboardStatsHandler
@@ -165,6 +171,7 @@ func buildDependencies(db *sql.DB, cfg viperconfig.AppConfig) Dependencies {
 	return Dependencies{
 		ListTasks:               taskquery.NewHandler(taskRepo),
 		ListPlatforms:           platformquery.NewHandler(platformRepo),
+		ListActions:             actionquery.NewListActionsHandler(workerClient),
 		ListProxies:             proxyquery.NewListProxiesHandler(proxyRepo),
 		ListAccounts:            accountquery.NewListAccountsHandler(accountRepo),
 		GetDashboardStats:       accountquery.NewDashboardStatsHandler(accountRepo),
@@ -346,6 +353,19 @@ func registerPublicRoutes(router routeRegistrar, deps Dependencies, logger zerol
 			return
 		}
 		c.JSON(http.StatusOK, result.Items)
+	})
+
+	router.GET("/actions/:platform", func(c *gin.Context) {
+		if deps.ListActions == nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "actions query handler not configured"})
+			return
+		}
+		result, err := deps.ListActions.Handle(c.Request.Context(), c.Param("platform"))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, result)
 	})
 
 	router.GET("/accounts", func(c *gin.Context) {

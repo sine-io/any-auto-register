@@ -67,6 +67,7 @@ npm run dev
 打开浏览器网络面板，确认以下 GET 请求命中 `/api-go`：
 
 - 平台列表：`/api-go/platforms`
+- 动作元数据：`/api-go/actions/{platform}`
 - 配置读取：`/api-go/config`
 - 账号列表：`/api-go/accounts`
 - 仪表盘统计：`/api-go/accounts/stats`
@@ -114,10 +115,12 @@ npm run dev
 步骤：
 
 1. 选一个支持动作的平台账号
-2. 执行动作
+2. 先确认动作菜单正常加载
+3. 再执行动作
 
 确认：
 
+- 动作元数据由 Go 控制面返回
 - 动作可用性元数据正常显示
 - 不可用动作仍保持禁用
 - 可用动作可以由 Go 转发到 Python Worker 执行

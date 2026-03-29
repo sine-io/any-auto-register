@@ -18,10 +18,15 @@ func (fakeIntegrationWorker) CheckAccount(context.Context, workerport.CheckAccou
 func (fakeIntegrationWorker) ExecuteAction(context.Context, workerport.ExecuteActionRequest) (workerport.ExecuteActionResponse, error) {
 	return workerport.ExecuteActionResponse{}, nil
 }
+func (fakeIntegrationWorker) ListActions(context.Context, string) (workerport.ListActionsResponse, error) {
+	return workerport.ListActionsResponse{}, nil
+}
 func (fakeIntegrationWorker) GetSolverStatus(context.Context) (workerport.SolverStatusResponse, error) {
 	return workerport.SolverStatusResponse{}, nil
 }
-func (fakeIntegrationWorker) RestartSolver(context.Context) (map[string]any, error) { return map[string]any{}, nil }
+func (fakeIntegrationWorker) RestartSolver(context.Context) (map[string]any, error) {
+	return map[string]any{}, nil
+}
 
 func (fakeIntegrationWorker) ListIntegrationServices(context.Context) (workerport.IntegrationServicesResponse, error) {
 	return workerport.IntegrationServicesResponse{Items: []map[string]any{{"name": "grok2api"}}}, nil

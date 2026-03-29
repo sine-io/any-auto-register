@@ -8,6 +8,7 @@ from core.config_store import config_store
 from core.db import AccountModel, engine
 from core.registry import get
 from core.base_platform import Account, AccountStatus, RegisterConfig
+from api.actions import _annotate_actions
 
 router = APIRouter(prefix="/worker", tags=["worker"])
 
@@ -28,6 +29,13 @@ class ExecuteActionWorkerRequest(BaseModel):
     account_id: int
     action_id: str
     params: dict = Field(default_factory=dict)
+
+
+@router.get("/actions/{platform}")
+def list_actions_worker(platform: str):
+    PlatformCls = get(platform)
+    instance = PlatformCls(config=RegisterConfig(extra=config_store.get_all()))
+    return {"actions": _annotate_actions(instance)}
 
 
 @router.post("/register")

@@ -18,10 +18,15 @@ func (fakeSystemWorker) CheckAccount(context.Context, workerport.CheckAccountReq
 func (fakeSystemWorker) ExecuteAction(context.Context, workerport.ExecuteActionRequest) (workerport.ExecuteActionResponse, error) {
 	return workerport.ExecuteActionResponse{}, nil
 }
+func (fakeSystemWorker) ListActions(context.Context, string) (workerport.ListActionsResponse, error) {
+	return workerport.ListActionsResponse{}, nil
+}
 func (fakeSystemWorker) GetSolverStatus(context.Context) (workerport.SolverStatusResponse, error) {
 	return workerport.SolverStatusResponse{Running: true}, nil
 }
-func (fakeSystemWorker) RestartSolver(context.Context) (map[string]any, error) { return map[string]any{}, nil }
+func (fakeSystemWorker) RestartSolver(context.Context) (map[string]any, error) {
+	return map[string]any{}, nil
+}
 func (fakeSystemWorker) ListIntegrationServices(context.Context) (workerport.IntegrationServicesResponse, error) {
 	return workerport.IntegrationServicesResponse{}, nil
 }

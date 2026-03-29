@@ -18,6 +18,9 @@ func (fakeSystemCommandWorker) CheckAccount(context.Context, workerport.CheckAcc
 func (fakeSystemCommandWorker) ExecuteAction(context.Context, workerport.ExecuteActionRequest) (workerport.ExecuteActionResponse, error) {
 	return workerport.ExecuteActionResponse{}, nil
 }
+func (fakeSystemCommandWorker) ListActions(context.Context, string) (workerport.ListActionsResponse, error) {
+	return workerport.ListActionsResponse{}, nil
+}
 func (fakeSystemCommandWorker) GetSolverStatus(context.Context) (workerport.SolverStatusResponse, error) {
 	return workerport.SolverStatusResponse{}, nil
 }

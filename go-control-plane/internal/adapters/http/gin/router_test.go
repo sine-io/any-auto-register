@@ -18,6 +18,7 @@ import (
 	proxycommand "go-control-plane/internal/application/command/proxy"
 	taskcommand "go-control-plane/internal/application/command/task"
 	accountquery "go-control-plane/internal/application/query/account"
+	actionquery "go-control-plane/internal/application/query/action"
 	platformquery "go-control-plane/internal/application/query/platform"
 	proxyquery "go-control-plane/internal/application/query/proxy"
 	systemquery "go-control-plane/internal/application/query/system"
@@ -129,6 +130,14 @@ type fakeExecuteActionHandler struct{}
 
 func (fakeExecuteActionHandler) Handle(context.Context, actioncommand.ExecutePlatformActionCommand) (actioncommand.ExecutePlatformActionResult, error) {
 	return actioncommand.ExecutePlatformActionResult{OK: true, Data: map[string]any{"message": "done"}}, nil
+}
+
+type fakeListActionsHandler struct{}
+
+func (fakeListActionsHandler) Handle(context.Context, string) (actionquery.ListActionsResult, error) {
+	return actionquery.ListActionsResult{
+		Actions: []map[string]any{{"id": "sync_external", "available": true}},
+	}, nil
 }
 
 type fakeProxyCommandHandler struct{}
@@ -467,9 +476,17 @@ func TestNewRouterExposesCheckAndActionEndpoints(t *testing.T) {
 
 	logger := zerologadapter.New("info")
 	router := NewRouterWithDependencies(cfg, logger, Dependencies{
+		ListActions:   fakeListActionsHandler{},
 		CheckAccount:  fakeCheckAccountHandler{},
 		ExecuteAction: fakeExecuteActionHandler{},
 	})
+
+	actionsReq := httptest.NewRequest(http.MethodGet, "/actions/dummy", nil)
+	actionsRec := httptest.NewRecorder()
+	router.ServeHTTP(actionsRec, actionsReq)
+	if actionsRec.Code != http.StatusOK {
+		t.Fatalf("expected /actions/:platform to return 200, got %d", actionsRec.Code)
+	}
 
 	checkReq := httptest.NewRequest(http.MethodPost, "/accounts/1/check", nil)
 	checkRec := httptest.NewRecorder()

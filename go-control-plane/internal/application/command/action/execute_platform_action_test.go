@@ -31,10 +31,15 @@ func (f fakeExecuteActionWorkerClient) Register(context.Context, workerport.Regi
 func (f fakeExecuteActionWorkerClient) CheckAccount(context.Context, workerport.CheckAccountRequest) (workerport.CheckAccountResponse, error) {
 	return workerport.CheckAccountResponse{}, nil
 }
+func (f fakeExecuteActionWorkerClient) ListActions(context.Context, string) (workerport.ListActionsResponse, error) {
+	return workerport.ListActionsResponse{}, nil
+}
 func (f fakeExecuteActionWorkerClient) GetSolverStatus(context.Context) (workerport.SolverStatusResponse, error) {
 	return workerport.SolverStatusResponse{}, nil
 }
-func (f fakeExecuteActionWorkerClient) RestartSolver(context.Context) (map[string]any, error) { return map[string]any{}, nil }
+func (f fakeExecuteActionWorkerClient) RestartSolver(context.Context) (map[string]any, error) {
+	return map[string]any{}, nil
+}
 func (f fakeExecuteActionWorkerClient) ListIntegrationServices(context.Context) (workerport.IntegrationServicesResponse, error) {
 	return workerport.IntegrationServicesResponse{}, nil
 }

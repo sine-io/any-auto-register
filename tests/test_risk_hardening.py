@@ -261,6 +261,15 @@ def test_worker_check_account_returns_validity(isolated_modules):
     assert response["valid"] is True
 
 
+def test_worker_list_actions_returns_platform_metadata(isolated_modules):
+    register_dummy_platform(isolated_modules)
+
+    response = isolated_modules.worker_api.list_actions_worker("dummy")
+
+    assert response["actions"][0]["id"] == "sync_external"
+    assert response["actions"][0]["available"] is True
+
+
 def test_worker_execute_action_returns_platform_result(isolated_modules):
     register_dummy_platform(isolated_modules)
     account = isolated_modules.db.AccountModel(
@@ -308,6 +317,12 @@ def test_smoke_script_disables_camoufox_prefetch_by_default():
     assert 'PYTHON_VNC_PORT="${PYTHON_VNC_PORT:-16080}"' in script
     assert 'BASE_URL="${SMOKE_BASE_URL:-http://127.0.0.1:${GATEWAY_PORT}/api-go}"' in script
     assert 'wait_for_url "${BASE_URL}/solver/status"' in script
+
+
+def test_frontend_routes_actions_through_go_control_plane():
+    utils_source = (ROOT / "frontend" / "src" / "lib" / "utils.ts").read_text(encoding="utf-8")
+    assert r"^\/actions\/[^/]+$" in utils_source
+    assert r"^\/actions\/[^/]+\/[^/]+\/[^/]+$" in utils_source
 
 
 def test_task_event_buffer_flushes_in_batch(isolated_modules):
