@@ -310,6 +310,12 @@ bash scripts/smoke_control_plane.sh
 - `.github/workflows/control-plane-ci.yml`
 - `.github/workflows/docker-smoke.yml`
 
+生产部署前，建议同时阅读：
+
+- `deploy/.env.example`
+- `docs/deploy-production.md`
+- `docs/rollback-plan.md`
+
 这套部署会启动 3 个服务：
 
 - `python-worker`：保留浏览器自动化、邮箱、验证码和平台执行逻辑
