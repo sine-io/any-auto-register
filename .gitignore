@@ -38,6 +38,7 @@ static/
 
 # Docker 数据
 data/
+.worktrees/
 
 # 环境变量
 .env
