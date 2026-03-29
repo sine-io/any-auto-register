@@ -285,20 +285,36 @@ function ConfigSection({ section }: { section: SectionConfig }) {
 }
 
 function SolverStatus() {
-  const [running, setRunning] = useState<boolean | null>(null)
+  const [solverState, setSolverState] = useState({
+    running: false,
+    status: 'checking',
+    reason: '',
+  })
 
   const checkSolver = async () => {
     try {
       const d = await apiFetch('/solver/status')
-      setRunning(d.running)
+      setSolverState({
+        running: Boolean(d.running),
+        status: d.status || (d.running ? 'running' : 'stopped'),
+        reason: d.reason || '',
+      })
     } catch {
-      setRunning(false)
+      setSolverState({
+        running: false,
+        status: 'failed',
+        reason: '状态请求失败',
+      })
     }
   }
 
   const restartSolver = async () => {
     await apiFetch('/solver/restart', { method: 'POST' })
-    setRunning(null)
+    setSolverState({
+      running: false,
+      status: 'starting',
+      reason: '',
+    })
     setTimeout(checkSolver, 2000)
   }
 
@@ -307,6 +323,26 @@ function SolverStatus() {
     const timer = window.setInterval(checkSolver, 5000)
     return () => window.clearInterval(timer)
   }, [])
+
+  const statusLabel =
+    solverState.status === 'starting'
+      ? '启动中'
+      : solverState.status === 'running'
+        ? '运行中'
+        : solverState.status === 'failed'
+          ? '启动失败'
+          : solverState.status === 'checking'
+            ? '检测中'
+            : '未运行'
+
+  const statusColor =
+    solverState.status === 'running'
+      ? '#10b981'
+      : solverState.status === 'failed'
+        ? '#ef4444'
+        : solverState.status === 'starting'
+          ? '#f59e0b'
+          : '#7a8ba3'
 
   return (
     <Card title="Turnstile Solver" size="small" style={{ marginBottom: 16 }}>
@@ -320,21 +356,26 @@ function SolverStatus() {
         }}
       >
         <Space size={8}>
-          {running === null ? (
+          {solverState.status === 'checking' || solverState.status === 'starting' ? (
             <SyncOutlined spin style={{ color: '#7a8ba3' }} />
-          ) : running ? (
+          ) : solverState.status === 'running' ? (
             <CheckCircleOutlined style={{ color: '#10b981' }} />
           ) : (
             <CloseCircleOutlined style={{ color: '#ef4444' }} />
           )}
-          <span style={{ color: running ? '#10b981' : '#7a8ba3', fontWeight: 500 }}>
-            {running === null ? '检测中' : running ? '运行中' : '未运行'}
+          <span style={{ color: statusColor, fontWeight: 500 }}>
+            {statusLabel}
           </span>
         </Space>
         <Button size="small" onClick={restartSolver}>
           重启 Solver
         </Button>
       </div>
+      {solverState.reason ? (
+        <div style={{ marginTop: 8, fontSize: 12, color: solverState.status === 'failed' ? '#ef4444' : '#7a8ba3' }}>
+          {solverState.reason}
+        </div>
+      ) : null}
     </Card>
   )
 }

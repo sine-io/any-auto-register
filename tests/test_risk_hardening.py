@@ -1,6 +1,8 @@
 import pathlib
 import importlib
+import asyncio
 import subprocess
+import sys
 import time
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -293,6 +295,60 @@ def test_solver_start_async_marks_status_starting(monkeypatch):
     assert solver_manager.get_status()["status"] == "starting"
 
 
+def test_turnstile_server_shutdown_closes_managed_resources():
+    solver_dir = ROOT / "services" / "turnstile_solver"
+    if str(solver_dir) not in sys.path:
+        sys.path.insert(0, str(solver_dir))
+    from services.turnstile_solver.api_solver import TurnstileAPIServer
+
+    class FakeBrowser:
+        def __init__(self):
+            self.closed = False
+
+        async def close(self):
+            self.closed = True
+
+    class FakeTask:
+        def __init__(self):
+            self.cancelled = False
+
+        def cancel(self):
+            self.cancelled = True
+
+        def __await__(self):
+            if False:
+                yield None
+            return None
+
+    class FakePlaywright:
+        def __init__(self):
+            self.stopped = False
+
+        async def stop(self):
+            self.stopped = True
+
+    server = TurnstileAPIServer(
+        headless=True,
+        useragent=None,
+        debug=False,
+        browser_type="chromium",
+        thread=1,
+        proxy_support=False,
+    )
+    browsers = [FakeBrowser(), FakeBrowser()]
+    cleanup_task = FakeTask()
+    playwright = FakePlaywright()
+    server._managed_browsers = browsers
+    server._cleanup_task = cleanup_task
+    server._playwright_manager = playwright
+
+    asyncio.run(server._shutdown())
+
+    assert all(browser.closed for browser in browsers)
+    assert cleanup_task.cancelled is True
+    assert playwright.stopped is True
+
+
 def test_python_config_masks_secret_values_on_read(isolated_modules):
     isolated_modules.config_store.config_store.set("yescaptcha_key", "secret-key")
     isolated_modules.config_store.config_store.set("mail_provider", "moemail")
@@ -417,6 +473,16 @@ def test_frontend_routes_account_management_through_go_control_plane():
     assert r"^\/accounts\/batch-delete$" in utils_source
     assert r"^\/accounts\/[^/]+$" in utils_source
     assert r"^\/tasks\/logs\/batch-delete$" in utils_source
+
+
+def test_frontend_solver_panel_uses_rich_status_fields():
+    settings_source = (ROOT / "frontend" / "src" / "pages" / "Settings.tsx").read_text(encoding="utf-8")
+    assert "d.status" in settings_source
+    assert "d.reason" in settings_source
+    assert "启动中" in settings_source
+    assert "运行中" in settings_source
+    assert "启动失败" in settings_source
+    assert "未运行" in settings_source
 
 
 def test_task_event_buffer_flushes_in_batch(isolated_modules):

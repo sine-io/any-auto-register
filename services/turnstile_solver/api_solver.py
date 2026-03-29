@@ -5,6 +5,7 @@ import uuid
 import random
 import logging
 import asyncio
+from contextlib import suppress
 from typing import Optional, Union
 import argparse
 from quart import Quart, request, jsonify
@@ -77,6 +78,9 @@ class TurnstileAPIServer:
         self.thread_count = thread
         self.proxy_support = proxy_support
         self.browser_pool = asyncio.Queue()
+        self._managed_browsers = []
+        self._cleanup_task = None
+        self._playwright_manager = None
         self.use_random_config = use_random_config
         self.browser_name = browser_name
         self.browser_version = browser_version
@@ -143,6 +147,7 @@ class TurnstileAPIServer:
     def _setup_routes(self) -> None:
         """Set up the application routes."""
         self.app.before_serving(self._startup)
+        self.app.after_serving(self._shutdown)
         self.app.route('/turnstile', methods=['GET'])(self.process_turnstile)
         self.app.route('/result', methods=['GET'])(self.get_result)
         self.app.route('/')(self.index)
@@ -157,7 +162,7 @@ class TurnstileAPIServer:
             await self._initialize_browser()
             
             # Запускаем периодическую очистку старых результатов
-            asyncio.create_task(self._periodic_cleanup())
+            self._cleanup_task = asyncio.create_task(self._periodic_cleanup())
             
         except Exception as e:
             logger.error(f"Failed to initialize browser: {str(e)}")
@@ -174,6 +179,7 @@ class TurnstileAPIServer:
                     "当前浏览器模式需要 patchright，但未安装。请执行: pip install patchright"
                 )
             playwright = await async_playwright().start()
+            self._playwright_manager = playwright
         elif self.browser_type == "camoufox":
             if AsyncCamoufox is None:
                 raise RuntimeError(
@@ -235,6 +241,7 @@ class TurnstileAPIServer:
                 browser = await camoufox.start()
 
             if browser:
+                self._managed_browsers.append(browser)
                 await self.browser_pool.put((i+1, browser, config))
 
             if self.debug:
@@ -254,6 +261,25 @@ class TurnstileAPIServer:
                 logger.debug(f"Browser {i+1} config: {config['browser_name']} {config['browser_version']}")
                 logger.debug(f"Browser {i+1} User-Agent: {config['useragent']}")
                 logger.debug(f"Browser {i+1} Sec-CH-UA: {config['sec_ch_ua']}")
+
+    async def _shutdown(self) -> None:
+        cleanup_task = self._cleanup_task
+        self._cleanup_task = None
+        if cleanup_task is not None:
+            cleanup_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await cleanup_task
+
+        for browser in list(self._managed_browsers):
+            with suppress(Exception):
+                await browser.close()
+        self._managed_browsers.clear()
+        self.browser_pool = asyncio.Queue()
+
+        if self._playwright_manager is not None:
+            with suppress(Exception):
+                await self._playwright_manager.stop()
+            self._playwright_manager = None
 
     async def _periodic_cleanup(self):
         """Periodic cleanup of old results every hour"""
