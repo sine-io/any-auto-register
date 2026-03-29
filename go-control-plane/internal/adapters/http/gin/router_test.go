@@ -74,6 +74,12 @@ func (fakeListTaskLogsHandler) Handle(context.Context, taskquery.ListLogsQuery) 
 	}, nil
 }
 
+type fakeDeleteTaskLogsHandler struct{}
+
+func (fakeDeleteTaskLogsHandler) Handle(context.Context, taskcommand.DeleteTaskLogsCommand) (taskcommand.DeleteTaskLogsResult, error) {
+	return taskcommand.DeleteTaskLogsResult{Deleted: 1, NotFound: []int64{}, TotalRequested: 1}, nil
+}
+
 type fakeListTaskEventsHandler struct{}
 
 func (fakeListTaskEventsHandler) Handle(context.Context, taskquery.ListEventsQuery) (taskquery.ListEventsResult, error) {
@@ -130,6 +136,36 @@ type fakeExecuteActionHandler struct{}
 
 func (fakeExecuteActionHandler) Handle(context.Context, actioncommand.ExecutePlatformActionCommand) (actioncommand.ExecutePlatformActionResult, error) {
 	return actioncommand.ExecutePlatformActionResult{OK: true, Data: map[string]any{"message": "done"}}, nil
+}
+
+type fakeCreateAccountHandler struct{}
+
+func (fakeCreateAccountHandler) Handle(context.Context, accountcommand.CreateAccountCommand) (accountcommand.AccountMutationResult, error) {
+	return accountcommand.AccountMutationResult{ID: 1, Platform: "dummy", Email: "user@example.com", Password: "secret", Status: "registered"}, nil
+}
+
+type fakeUpdateAccountHandler struct{}
+
+func (fakeUpdateAccountHandler) Handle(context.Context, accountcommand.UpdateAccountCommand) (accountcommand.AccountMutationResult, error) {
+	return accountcommand.AccountMutationResult{ID: 1, Platform: "dummy", Email: "user@example.com", Status: "trial"}, nil
+}
+
+type fakeDeleteAccountHandler struct{}
+
+func (fakeDeleteAccountHandler) Handle(context.Context, accountcommand.DeleteAccountCommand) (map[string]any, error) {
+	return map[string]any{"ok": true}, nil
+}
+
+type fakeBatchDeleteAccountsHandler struct{}
+
+func (fakeBatchDeleteAccountsHandler) Handle(context.Context, accountcommand.BatchDeleteAccountsCommand) (accountcommand.BatchDeleteAccountsResult, error) {
+	return accountcommand.BatchDeleteAccountsResult{Deleted: 1, NotFound: []int64{}, TotalRequested: 1}, nil
+}
+
+type fakeImportAccountsHandler struct{}
+
+func (fakeImportAccountsHandler) Handle(context.Context, accountcommand.ImportAccountsCommand) (accountcommand.ImportAccountsResult, error) {
+	return accountcommand.ImportAccountsResult{Created: 2}, nil
 }
 
 type fakeListActionsHandler struct{}
@@ -254,7 +290,13 @@ func TestNewRouterExposesTaskAndPlatformEndpoints(t *testing.T) {
 		UpdateConfig:            fakeUpdateConfigHandler{},
 		GetTask:                 fakeGetTaskHandler{},
 		ListTaskLogs:            fakeListTaskLogsHandler{},
+		DeleteTaskLogs:          fakeDeleteTaskLogsHandler{},
 		ListTaskEvents:          fakeListTaskEventsHandler{},
+		CreateAccount:           fakeCreateAccountHandler{},
+		UpdateAccount:           fakeUpdateAccountHandler{},
+		DeleteAccount:           fakeDeleteAccountHandler{},
+		BatchDeleteAccounts:     fakeBatchDeleteAccountsHandler{},
+		ImportAccounts:          fakeImportAccountsHandler{},
 		GetSolverStatus:         fakeSolverStatusHandler{},
 		RestartSolver:           fakeRestartSolverHandler{},
 		ListIntegrationServices: fakeListIntegrationServicesHandler{},
@@ -363,6 +405,53 @@ func TestNewRouterExposesTaskAndPlatformEndpoints(t *testing.T) {
 	router.ServeHTTP(logsRec, logsReq)
 	if logsRec.Code != http.StatusOK {
 		t.Fatalf("expected /api/tasks/logs to return 200, got %d", logsRec.Code)
+	}
+
+	deleteLogsReq := httptest.NewRequest(http.MethodPost, "/api/tasks/logs/batch-delete", strings.NewReader(`{"ids":[1]}`))
+	deleteLogsReq.Header.Set("Content-Type", "application/json")
+	deleteLogsRec := httptest.NewRecorder()
+	router.ServeHTTP(deleteLogsRec, deleteLogsReq)
+	if deleteLogsRec.Code != http.StatusOK {
+		t.Fatalf("expected /api/tasks/logs/batch-delete to return 200, got %d", deleteLogsRec.Code)
+	}
+
+	createAccountReq := httptest.NewRequest(http.MethodPost, "/api/accounts", strings.NewReader(`{"platform":"dummy","email":"user@example.com","password":"secret"}`))
+	createAccountReq.Header.Set("Content-Type", "application/json")
+	createAccountRec := httptest.NewRecorder()
+	router.ServeHTTP(createAccountRec, createAccountReq)
+	if createAccountRec.Code != http.StatusOK {
+		t.Fatalf("expected POST /api/accounts to return 200, got %d", createAccountRec.Code)
+	}
+
+	importAccountsReq := httptest.NewRequest(http.MethodPost, "/api/accounts/import", strings.NewReader(`{"platform":"dummy","lines":["user@example.com secret"]}`))
+	importAccountsReq.Header.Set("Content-Type", "application/json")
+	importAccountsRec := httptest.NewRecorder()
+	router.ServeHTTP(importAccountsRec, importAccountsReq)
+	if importAccountsRec.Code != http.StatusOK {
+		t.Fatalf("expected POST /api/accounts/import to return 200, got %d", importAccountsRec.Code)
+	}
+
+	batchDeleteAccountsReq := httptest.NewRequest(http.MethodPost, "/api/accounts/batch-delete", strings.NewReader(`{"ids":[1]}`))
+	batchDeleteAccountsReq.Header.Set("Content-Type", "application/json")
+	batchDeleteAccountsRec := httptest.NewRecorder()
+	router.ServeHTTP(batchDeleteAccountsRec, batchDeleteAccountsReq)
+	if batchDeleteAccountsRec.Code != http.StatusOK {
+		t.Fatalf("expected POST /api/accounts/batch-delete to return 200, got %d", batchDeleteAccountsRec.Code)
+	}
+
+	updateAccountReq := httptest.NewRequest(http.MethodPatch, "/api/accounts/1", strings.NewReader(`{"status":"trial"}`))
+	updateAccountReq.Header.Set("Content-Type", "application/json")
+	updateAccountRec := httptest.NewRecorder()
+	router.ServeHTTP(updateAccountRec, updateAccountReq)
+	if updateAccountRec.Code != http.StatusOK {
+		t.Fatalf("expected PATCH /api/accounts/:id to return 200, got %d", updateAccountRec.Code)
+	}
+
+	deleteAccountReq := httptest.NewRequest(http.MethodDelete, "/api/accounts/1", nil)
+	deleteAccountRec := httptest.NewRecorder()
+	router.ServeHTTP(deleteAccountRec, deleteAccountReq)
+	if deleteAccountRec.Code != http.StatusOK {
+		t.Fatalf("expected DELETE /api/accounts/:id to return 200, got %d", deleteAccountRec.Code)
 	}
 
 	streamReq := httptest.NewRequest(http.MethodGet, "/api/tasks/task_1/logs/stream", nil)

@@ -20,7 +20,7 @@ func TestListAccountsHandlerReturnsPaginatedAccounts(t *testing.T) {
 	handler := NewListAccountsHandler(fakeAccountListRepository{
 		total: 2,
 		items: []domainaccount.Account{
-			{ID: 1, Platform: "dummy", Email: "user@example.com", Status: "registered"},
+			{ID: 1, Platform: "dummy", Email: "user@example.com", Password: "secret", Region: "US", Token: "tok", Status: "registered"},
 		},
 	})
 
@@ -33,5 +33,8 @@ func TestListAccountsHandlerReturnsPaginatedAccounts(t *testing.T) {
 	}
 	if len(result.Items) != 1 || result.Items[0].Email != "user@example.com" {
 		t.Fatalf("unexpected account items: %#v", result.Items)
+	}
+	if result.Items[0].Password != "secret" || result.Items[0].Region != "US" || result.Items[0].Token != "tok" {
+		t.Fatalf("expected password/region/token to be preserved, got %#v", result.Items[0])
 	}
 }

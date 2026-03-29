@@ -63,6 +63,26 @@ type UpdateConfigHandler interface {
 	Handle(context.Context, configcommand.UpdateConfigCommand) (configcommand.UpdateConfigResult, error)
 }
 
+type CreateAccountHandler interface {
+	Handle(context.Context, accountcommand.CreateAccountCommand) (accountcommand.AccountMutationResult, error)
+}
+
+type UpdateAccountHandler interface {
+	Handle(context.Context, accountcommand.UpdateAccountCommand) (accountcommand.AccountMutationResult, error)
+}
+
+type DeleteAccountHandler interface {
+	Handle(context.Context, accountcommand.DeleteAccountCommand) (map[string]any, error)
+}
+
+type BatchDeleteAccountsHandler interface {
+	Handle(context.Context, accountcommand.BatchDeleteAccountsCommand) (accountcommand.BatchDeleteAccountsResult, error)
+}
+
+type ImportAccountsHandler interface {
+	Handle(context.Context, accountcommand.ImportAccountsCommand) (accountcommand.ImportAccountsResult, error)
+}
+
 type GetTaskHandler interface {
 	Handle(context.Context, taskquery.GetTaskQuery) (taskquery.TaskItem, error)
 }
@@ -73,6 +93,10 @@ type ListTaskLogsHandler interface {
 
 type ListTaskEventsHandler interface {
 	Handle(context.Context, taskquery.ListEventsQuery) (taskquery.ListEventsResult, error)
+}
+
+type DeleteTaskLogsHandler interface {
+	Handle(context.Context, taskcommand.DeleteTaskLogsCommand) (taskcommand.DeleteTaskLogsResult, error)
 }
 
 type SolverStatusHandler interface {
@@ -105,9 +129,15 @@ type Dependencies struct {
 	GetDashboardStats       DashboardStatsHandler
 	GetConfig               GetConfigHandler
 	UpdateConfig            UpdateConfigHandler
+	CreateAccount           CreateAccountHandler
+	UpdateAccount           UpdateAccountHandler
+	DeleteAccount           DeleteAccountHandler
+	BatchDeleteAccounts     BatchDeleteAccountsHandler
+	ImportAccounts          ImportAccountsHandler
 	GetTask                 GetTaskHandler
 	ListTaskLogs            ListTaskLogsHandler
 	ListTaskEvents          ListTaskEventsHandler
+	DeleteTaskLogs          DeleteTaskLogsHandler
 	GetSolverStatus         SolverStatusHandler
 	RestartSolver           RestartSolverHandler
 	ListIntegrationServices ListIntegrationServicesHandler
@@ -177,9 +207,15 @@ func buildDependencies(db *sql.DB, cfg viperconfig.AppConfig) Dependencies {
 		GetDashboardStats:       accountquery.NewDashboardStatsHandler(accountRepo),
 		GetConfig:               configquery.NewGetConfigHandler(configRepo),
 		UpdateConfig:            configcommand.NewUpdateConfigHandler(configRepo),
+		CreateAccount:           accountcommand.NewCreateAccountHandler(accountRepo),
+		UpdateAccount:           accountcommand.NewUpdateAccountHandler(accountRepo),
+		DeleteAccount:           accountcommand.NewDeleteAccountHandler(accountRepo),
+		BatchDeleteAccounts:     accountcommand.NewBatchDeleteAccountsHandler(accountRepo),
+		ImportAccounts:          accountcommand.NewImportAccountsHandler(accountRepo),
 		GetTask:                 taskquery.NewGetTaskHandler(taskRepo),
 		ListTaskLogs:            taskquery.NewListLogsHandler(taskRepo),
 		ListTaskEvents:          taskquery.NewListEventsHandler(taskRepo),
+		DeleteTaskLogs:          taskcommand.NewDeleteTaskLogsHandler(taskRepo),
 		GetSolverStatus:         systemquery.NewSolverStatusHandler(workerClient),
 		RestartSolver:           systemcommand.NewRestartSolverHandler(workerClient),
 		ListIntegrationServices: integrationquery.NewListServicesHandler(workerClient),
@@ -250,6 +286,30 @@ func registerPublicRoutes(router routeRegistrar, deps Dependencies, logger zerol
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		c.JSON(http.StatusOK, result)
+	})
+
+	router.POST("/tasks/logs/batch-delete", func(c *gin.Context) {
+		if deps.DeleteTaskLogs == nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "task log delete handler not configured"})
+			return
+		}
+		var cmd taskcommand.DeleteTaskLogsCommand
+		if err := c.ShouldBindJSON(&cmd); err != nil {
+			auditLog(logger, "task_logs.batch_delete", "invalid_request", nil, err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		result, err := deps.DeleteTaskLogs.Handle(c.Request.Context(), cmd)
+		if err != nil {
+			auditLog(logger, "task_logs.batch_delete", "error", map[string]any{"count": len(cmd.IDs)}, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		auditLog(logger, "task_logs.batch_delete", "ok", map[string]any{
+			"count":   len(cmd.IDs),
+			"deleted": result.Deleted,
+		}, nil)
 		c.JSON(http.StatusOK, result)
 	})
 
@@ -397,6 +457,128 @@ func registerPublicRoutes(router routeRegistrar, deps Dependencies, logger zerol
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		c.JSON(http.StatusOK, result)
+	})
+
+	router.POST("/accounts", func(c *gin.Context) {
+		if deps.CreateAccount == nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "account create handler not configured"})
+			return
+		}
+		var cmd accountcommand.CreateAccountCommand
+		if err := c.ShouldBindJSON(&cmd); err != nil {
+			auditLog(logger, "account.create", "invalid_request", nil, err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		result, err := deps.CreateAccount.Handle(c.Request.Context(), cmd)
+		if err != nil {
+			auditLog(logger, "account.create", "error", map[string]any{"platform": cmd.Platform}, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		auditLog(logger, "account.create", "ok", map[string]any{
+			"account_id": result.ID,
+			"platform":   result.Platform,
+		}, nil)
+		c.JSON(http.StatusOK, result)
+	})
+
+	router.POST("/accounts/import", func(c *gin.Context) {
+		if deps.ImportAccounts == nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "account import handler not configured"})
+			return
+		}
+		var cmd accountcommand.ImportAccountsCommand
+		if err := c.ShouldBindJSON(&cmd); err != nil {
+			auditLog(logger, "account.import", "invalid_request", nil, err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		result, err := deps.ImportAccounts.Handle(c.Request.Context(), cmd)
+		if err != nil {
+			auditLog(logger, "account.import", "error", map[string]any{"platform": cmd.Platform, "count": len(cmd.Lines)}, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		auditLog(logger, "account.import", "ok", map[string]any{
+			"platform": cmd.Platform,
+			"count":    len(cmd.Lines),
+			"created":  result.Created,
+		}, nil)
+		c.JSON(http.StatusOK, result)
+	})
+
+	router.POST("/accounts/batch-delete", func(c *gin.Context) {
+		if deps.BatchDeleteAccounts == nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "account batch delete handler not configured"})
+			return
+		}
+		var cmd accountcommand.BatchDeleteAccountsCommand
+		if err := c.ShouldBindJSON(&cmd); err != nil {
+			auditLog(logger, "account.batch_delete", "invalid_request", nil, err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		result, err := deps.BatchDeleteAccounts.Handle(c.Request.Context(), cmd)
+		if err != nil {
+			auditLog(logger, "account.batch_delete", "error", map[string]any{"count": len(cmd.IDs)}, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		auditLog(logger, "account.batch_delete", "ok", map[string]any{
+			"count":   len(cmd.IDs),
+			"deleted": result.Deleted,
+		}, nil)
+		c.JSON(http.StatusOK, result)
+	})
+
+	router.PATCH("/accounts/:accountID", func(c *gin.Context) {
+		if deps.UpdateAccount == nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "account update handler not configured"})
+			return
+		}
+		accountID, err := strconv.ParseInt(c.Param("accountID"), 10, 64)
+		if err != nil {
+			auditLog(logger, "account.update", "invalid_request", nil, err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid account id"})
+			return
+		}
+		var cmd accountcommand.UpdateAccountCommand
+		if err := c.ShouldBindJSON(&cmd); err != nil {
+			auditLog(logger, "account.update", "invalid_request", nil, err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		cmd.AccountID = accountID
+		result, err := deps.UpdateAccount.Handle(c.Request.Context(), cmd)
+		if err != nil {
+			auditLog(logger, "account.update", "error", map[string]any{"account_id": accountID}, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		auditLog(logger, "account.update", "ok", map[string]any{"account_id": accountID}, nil)
+		c.JSON(http.StatusOK, result)
+	})
+
+	router.DELETE("/accounts/:accountID", func(c *gin.Context) {
+		if deps.DeleteAccount == nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "account delete handler not configured"})
+			return
+		}
+		accountID, err := strconv.ParseInt(c.Param("accountID"), 10, 64)
+		if err != nil {
+			auditLog(logger, "account.delete", "invalid_request", nil, err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid account id"})
+			return
+		}
+		result, err := deps.DeleteAccount.Handle(c.Request.Context(), accountcommand.DeleteAccountCommand{AccountID: accountID})
+		if err != nil {
+			auditLog(logger, "account.delete", "error", map[string]any{"account_id": accountID}, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		auditLog(logger, "account.delete", "ok", map[string]any{"account_id": accountID}, nil)
 		c.JSON(http.StatusOK, result)
 	})
 

@@ -19,6 +19,10 @@ const GO_PATTERNS: Record<string, RegExp[]> = {
   ],
   POST: [
     /^\/tasks\/register$/,
+    /^\/tasks\/logs\/batch-delete$/,
+    /^\/accounts$/,
+    /^\/accounts\/import$/,
+    /^\/accounts\/batch-delete$/,
     /^\/accounts\/[^/]+\/check$/,
     /^\/actions\/[^/]+\/[^/]+\/[^/]+$/,
     /^\/proxies$/,
@@ -36,9 +40,11 @@ const GO_PATTERNS: Record<string, RegExp[]> = {
     /^\/config$/,
   ],
   PATCH: [
+    /^\/accounts\/[^/]+$/,
     /^\/proxies\/[^/]+\/toggle$/,
   ],
   DELETE: [
+    /^\/accounts\/[^/]+$/,
     /^\/proxies\/[^/]+$/,
   ],
 }

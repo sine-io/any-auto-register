@@ -192,6 +192,27 @@ func (r TaskRepository) ListEvents(ctx context.Context, taskID string, sinceID i
 	return items, rows.Err()
 }
 
+func (r TaskRepository) DeleteTaskLogs(ctx context.Context, ids []int64) (int, []int64, error) {
+	deleted := 0
+	notFound := make([]int64, 0)
+	for _, id := range ids {
+		result, err := r.db.ExecContext(ctx, `DELETE FROM task_logs WHERE id = ?`, id)
+		if err != nil {
+			return 0, nil, err
+		}
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return 0, nil, err
+		}
+		if rowsAffected == 0 {
+			notFound = append(notFound, id)
+			continue
+		}
+		deleted++
+	}
+	return deleted, notFound, nil
+}
+
 func decodeStringSlice(raw string) []string {
 	if strings.TrimSpace(raw) == "" {
 		return []string{}

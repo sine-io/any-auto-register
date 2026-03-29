@@ -325,6 +325,15 @@ def test_frontend_routes_actions_through_go_control_plane():
     assert r"^\/actions\/[^/]+\/[^/]+\/[^/]+$" in utils_source
 
 
+def test_frontend_routes_account_management_through_go_control_plane():
+    utils_source = (ROOT / "frontend" / "src" / "lib" / "utils.ts").read_text(encoding="utf-8")
+    assert r"^\/accounts$" in utils_source
+    assert r"^\/accounts\/import$" in utils_source
+    assert r"^\/accounts\/batch-delete$" in utils_source
+    assert r"^\/accounts\/[^/]+$" in utils_source
+    assert r"^\/tasks\/logs\/batch-delete$" in utils_source
+
+
 def test_task_event_buffer_flushes_in_batch(isolated_modules):
     req = isolated_modules.tasks_api.RegisterTaskRequest(platform="dummy", count=1)
     isolated_modules.tasks_api._create_task_run("task_buffer", req)

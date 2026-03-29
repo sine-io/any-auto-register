@@ -6,6 +6,9 @@ type Account struct {
 	ID           int64
 	Platform     string
 	Email        string
+	Password     string
+	Region       string
+	Token        string
 	Status       string
 	CashierURL   string
 	TrialEndTime int64
