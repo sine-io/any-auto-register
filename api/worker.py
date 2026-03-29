@@ -15,6 +15,7 @@ router = APIRouter(prefix="/worker", tags=["worker"])
 class RegisterWorkerRequest(RegisterTaskRequest):
     task_id: str = ""
     callback_base_url: str = ""
+    callback_token: str = ""
 
 
 class CheckAccountWorkerRequest(BaseModel):
@@ -34,18 +35,23 @@ def register_worker(body: RegisterWorkerRequest):
     logs: list[str] = []
     callback_base = str(body.callback_base_url or "").rstrip("/")
     task_id = str(body.task_id or "").strip()
+    callback_token = str(body.callback_token or "").strip()
 
     def _callback(event: str, payload: dict):
         if not callback_base or not task_id:
             return
         try:
-            requests.post(
+            response = requests.post(
                 f"{callback_base}/internal/worker/tasks/{task_id}/{event}",
                 json=payload,
+                headers={
+                    "X-AAR-Internal-Callback-Token": callback_token,
+                } if callback_token else {},
                 timeout=5,
             )
-        except Exception:
-            pass
+            response.raise_for_status()
+        except Exception as e:
+            logs.append(f"[callback:{event}] {e}")
 
     def _collect(message: str):
         logs.append(message)

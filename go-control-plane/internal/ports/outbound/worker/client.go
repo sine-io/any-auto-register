@@ -5,6 +5,7 @@ import "context"
 type RegisterRequest struct {
 	TaskID               string         `json:"task_id,omitempty"`
 	CallbackBaseURL      string         `json:"callback_base_url,omitempty"`
+	CallbackToken        string         `json:"callback_token,omitempty"`
 	Platform             string         `json:"platform"`
 	Email                string         `json:"email,omitempty"`
 	Password             string         `json:"password,omitempty"`

@@ -8,6 +8,7 @@ import (
 
 type AppConfig struct {
 	Server    ServerConfig    `mapstructure:"server"`
+	Internal  InternalConfig  `mapstructure:"internal"`
 	Log       LogConfig       `mapstructure:"log"`
 	Database  DatabaseConfig  `mapstructure:"database"`
 	Worker    WorkerConfig    `mapstructure:"worker"`
@@ -15,10 +16,14 @@ type AppConfig struct {
 }
 
 type ServerConfig struct {
-	Host          string `mapstructure:"host"`
-	Port          int    `mapstructure:"port"`
-	PublicBaseURL string `mapstructure:"public_base_url"`
+	Host            string `mapstructure:"host"`
+	Port            int    `mapstructure:"port"`
+	PublicBaseURL   string `mapstructure:"public_base_url"`
 	CallbackBaseURL string `mapstructure:"callback_base_url"`
+}
+
+type InternalConfig struct {
+	CallbackToken string `mapstructure:"callback_token"`
 }
 
 type LogConfig struct {
@@ -53,6 +58,7 @@ func Load(configPath string) (AppConfig, error) {
 	v.SetDefault("server.port", 8080)
 	v.SetDefault("server.public_base_url", "http://127.0.0.1:8080")
 	v.SetDefault("server.callback_base_url", "")
+	v.SetDefault("internal.callback_token", "")
 	v.SetDefault("log.level", "info")
 	v.SetDefault("database.url", "../account_manager.db")
 	v.SetDefault("worker.base_url", "http://127.0.0.1:8000")

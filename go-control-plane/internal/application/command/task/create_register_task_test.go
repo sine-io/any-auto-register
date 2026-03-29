@@ -57,7 +57,9 @@ func (f fakeWorkerClient) ExecuteAction(context.Context, workerport.ExecuteActio
 func (f fakeWorkerClient) GetSolverStatus(context.Context) (workerport.SolverStatusResponse, error) {
 	return workerport.SolverStatusResponse{}, nil
 }
-func (f fakeWorkerClient) RestartSolver(context.Context) (map[string]any, error) { return map[string]any{}, nil }
+func (f fakeWorkerClient) RestartSolver(context.Context) (map[string]any, error) {
+	return map[string]any{}, nil
+}
 func (f fakeWorkerClient) ListIntegrationServices(context.Context) (workerport.IntegrationServicesResponse, error) {
 	return workerport.IntegrationServicesResponse{}, nil
 }
@@ -89,7 +91,7 @@ func TestHandleCreatesAndCompletesTaskUsingWorkerResponse(t *testing.T) {
 			Logs:         []string{"started", "done"},
 			CashierURLs:  []string{"https://example.com/pay"},
 		},
-	}, func() string { return "task_123" }, func() time.Time { return time.Unix(10, 0).UTC() })
+	}, func() string { return "task_123" }, func() time.Time { return time.Unix(10, 0).UTC() }, "", "")
 
 	result, err := handler.Handle(context.Background(), Command{Platform: "dummy", Count: 1})
 	if err != nil {
@@ -117,7 +119,7 @@ func TestHandlePassesCallbackMetadataToWorker(t *testing.T) {
 		},
 		called: make(chan struct{}),
 	}
-	handler := NewHandler(repo, worker, func() string { return "task_999" }, func() time.Time { return time.Unix(10, 0).UTC() }, "http://127.0.0.1:8080")
+	handler := NewHandler(repo, worker, func() string { return "task_999" }, func() time.Time { return time.Unix(10, 0).UTC() }, "http://127.0.0.1:8080", "secret-token")
 
 	_, err := handler.Handle(context.Background(), Command{Platform: "dummy", Count: 1})
 	if err != nil {
@@ -134,6 +136,9 @@ func TestHandlePassesCallbackMetadataToWorker(t *testing.T) {
 	if worker.request.CallbackBaseURL != "http://127.0.0.1:8080" {
 		t.Fatalf("expected callback base url to be forwarded, got %#v", worker.request)
 	}
+	if worker.request.CallbackToken != "secret-token" {
+		t.Fatalf("expected callback token to be forwarded, got %#v", worker.request)
+	}
 }
 
 func TestHandleReturnsImmediatelyWhenCallbackModeEnabled(t *testing.T) {
@@ -142,7 +147,7 @@ func TestHandleReturnsImmediatelyWhenCallbackModeEnabled(t *testing.T) {
 		release:  make(chan struct{}),
 		response: workerport.RegisterResponse{OK: true, SuccessCount: 1},
 	}
-	handler := NewHandler(repo, worker, func() string { return "task_async" }, func() time.Time { return time.Unix(10, 0).UTC() }, "http://127.0.0.1:8080")
+	handler := NewHandler(repo, worker, func() string { return "task_async" }, func() time.Time { return time.Unix(10, 0).UTC() }, "http://127.0.0.1:8080", "secret-token")
 
 	done := make(chan Result, 1)
 	errCh := make(chan error, 1)
@@ -203,7 +208,9 @@ func (f *capturingWorkerClient) ExecuteAction(context.Context, workerport.Execut
 func (f *capturingWorkerClient) GetSolverStatus(context.Context) (workerport.SolverStatusResponse, error) {
 	return workerport.SolverStatusResponse{}, nil
 }
-func (f *capturingWorkerClient) RestartSolver(context.Context) (map[string]any, error) { return map[string]any{}, nil }
+func (f *capturingWorkerClient) RestartSolver(context.Context) (map[string]any, error) {
+	return map[string]any{}, nil
+}
 func (f *capturingWorkerClient) ListIntegrationServices(context.Context) (workerport.IntegrationServicesResponse, error) {
 	return workerport.IntegrationServicesResponse{}, nil
 }
@@ -246,7 +253,9 @@ func (f *blockingWorkerClient) ExecuteAction(context.Context, workerport.Execute
 func (f *blockingWorkerClient) GetSolverStatus(context.Context) (workerport.SolverStatusResponse, error) {
 	return workerport.SolverStatusResponse{}, nil
 }
-func (f *blockingWorkerClient) RestartSolver(context.Context) (map[string]any, error) { return map[string]any{}, nil }
+func (f *blockingWorkerClient) RestartSolver(context.Context) (map[string]any, error) {
+	return map[string]any{}, nil
+}
 func (f *blockingWorkerClient) ListIntegrationServices(context.Context) (workerport.IntegrationServicesResponse, error) {
 	return workerport.IntegrationServicesResponse{}, nil
 }

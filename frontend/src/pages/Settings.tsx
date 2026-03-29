@@ -13,6 +13,8 @@ import {
 } from '@ant-design/icons'
 import { apiFetch } from '@/lib/utils'
 
+const MASKED_SECRET_VALUE = '********'
+
 const SELECT_FIELDS: Record<string, { label: string; value: string }[]> = {
   mail_provider: [
     { label: 'Laoudo（固定邮箱）', value: 'laoudo' },
@@ -206,6 +208,13 @@ const TAB_ITEMS = [
     sections: [],
   },
 ]
+
+const SECRET_FIELD_KEYS = new Set<string>(
+  (TAB_ITEMS as TabConfig[])
+    .flatMap((tab) => tab.sections.flatMap((section) => section.fields))
+    .filter((field) => field.secret)
+    .map((field) => field.key),
+)
 
 interface FieldConfig {
   key: string
@@ -519,16 +528,38 @@ export default function Settings() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [activeTab, setActiveTab] = useState('register')
+  const [initialValues, setInitialValues] = useState<Record<string, string>>({})
 
   useEffect(() => {
-    apiFetch('/config').then(form.setFieldsValue)
-  }, [])
+    apiFetch('/config').then((data) => {
+      form.setFieldsValue(data)
+      setInitialValues(data)
+    })
+  }, [form])
 
   const save = async () => {
     setSaving(true)
     try {
       const values = form.getFieldsValue()
-      await apiFetch('/config', { method: 'PUT', body: JSON.stringify({ data: values }) })
+      const changedEntries = Object.entries(values).filter(([key, value]) => {
+        const nextValue = value ?? ''
+        const previousValue = initialValues[key] ?? ''
+        if (SECRET_FIELD_KEYS.has(key) && nextValue === MASKED_SECRET_VALUE && previousValue === MASKED_SECRET_VALUE) {
+          return false
+        }
+        return nextValue !== previousValue
+      })
+
+      if (changedEntries.length === 0) {
+        message.info('没有需要保存的变更')
+        return
+      }
+
+      const data = Object.fromEntries(changedEntries)
+      await apiFetch('/config', { method: 'PUT', body: JSON.stringify({ data }) })
+      const latest = await apiFetch('/config')
+      form.setFieldsValue(latest)
+      setInitialValues(latest)
       message.success('保存成功')
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)

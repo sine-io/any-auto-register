@@ -17,6 +17,7 @@ MODULES_TO_RESET = [
     "main",
     "api.accounts",
     "api.actions",
+    "api.config",
     "api.tasks",
     "api.worker",
     "api.platforms",
@@ -45,9 +46,11 @@ def isolated_modules(tmp_path, monkeypatch):
     base_platform = importlib.import_module("core.base_platform")
     accounts_api = importlib.import_module("api.accounts")
     actions_api = importlib.import_module("api.actions")
+    config_api = importlib.import_module("api.config")
     tasks_api = importlib.import_module("api.tasks")
     worker_api = importlib.import_module("api.worker")
     platforms_api = importlib.import_module("api.platforms")
+    config_store = importlib.import_module("core.config_store")
 
     db.init_db()
     registry._registry.clear()
@@ -58,6 +61,8 @@ def isolated_modules(tmp_path, monkeypatch):
         base_platform=base_platform,
         accounts_api=accounts_api,
         actions_api=actions_api,
+        config_api=config_api,
+        config_store=config_store,
         tasks_api=tasks_api,
         worker_api=worker_api,
         platforms_api=platforms_api,

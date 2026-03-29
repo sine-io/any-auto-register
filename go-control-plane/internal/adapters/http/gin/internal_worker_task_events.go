@@ -3,6 +3,7 @@ package gingateway
 import (
 	"net/http"
 
+	securitycommand "go-control-plane/internal/application/command/security"
 	taskcommand "go-control-plane/internal/application/command/task"
 	domaintask "go-control-plane/internal/domain/task"
 
@@ -26,8 +27,18 @@ type workerResultRequest struct {
 	CashierURLs  []string `json:"cashier_urls"`
 }
 
-func registerInternalWorkerRoutes(router *gin.Engine, deps Dependencies) {
+func registerInternalWorkerRoutes(router *gin.Engine, deps Dependencies, expectedToken string) {
 	group := router.Group("/internal/worker/tasks/:taskID")
+	group.Use(func(c *gin.Context) {
+		if err := securitycommand.ValidateInternalCallbackToken(
+			expectedToken,
+			c.GetHeader(securitycommand.InternalCallbackTokenHeader),
+		); err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+		c.Next()
+	})
 
 	group.POST("/started", func(c *gin.Context) {
 		handleWorkerEvent(c, deps, taskcommand.ApplyWorkerEventCommand{

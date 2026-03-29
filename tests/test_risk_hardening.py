@@ -1,4 +1,5 @@
 import pathlib
+import importlib
 import time
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -154,7 +155,7 @@ def test_worker_register_posts_callbacks_when_configured(isolated_modules):
         def do_POST(self):
             length = int(self.headers.get("Content-Length", "0"))
             body = self.rfile.read(length).decode("utf-8")
-            received.append((self.path, body))
+            received.append((self.path, dict(self.headers), body))
             self.send_response(200)
             self.end_headers()
 
@@ -175,6 +176,7 @@ def test_worker_register_posts_callbacks_when_configured(isolated_modules):
                 count=1,
                 task_id="task_cb_1",
                 callback_base_url=f"http://127.0.0.1:{port}",
+                callback_token="secret-token",
                 extra={"mail_provider": "laoudo"},
             )
         )
@@ -187,6 +189,50 @@ def test_worker_register_posts_callbacks_when_configured(isolated_modules):
     assert "/internal/worker/tasks/task_cb_1/started" in paths
     assert "/internal/worker/tasks/task_cb_1/log" in paths
     assert "/internal/worker/tasks/task_cb_1/succeeded" in paths
+    started_headers = next(headers for path, headers, _ in received if path.endswith("/started"))
+    assert started_headers["X-AAR-Internal-Callback-Token"] == "secret-token"
+
+
+def test_main_reads_cors_allow_origins_from_env(monkeypatch):
+    monkeypatch.setenv(
+        "APP_CORS_ALLOW_ORIGINS",
+        "http://localhost:3000, https://app.example.com",
+    )
+    main = importlib.import_module("main")
+
+    assert main.get_cors_allow_origins() == [
+        "http://localhost:3000",
+        "https://app.example.com",
+    ]
+
+
+def test_python_config_masks_secret_values_on_read(isolated_modules):
+    isolated_modules.config_store.config_store.set("yescaptcha_key", "secret-key")
+    isolated_modules.config_store.config_store.set("mail_provider", "moemail")
+
+    payload = isolated_modules.config_api.get_config()
+
+    assert payload["yescaptcha_key"] == isolated_modules.config_api.MASKED_SECRET_VALUE
+    assert payload["mail_provider"] == "moemail"
+
+
+def test_python_config_ignores_masked_secret_placeholder_on_update(isolated_modules):
+    isolated_modules.config_store.config_store.set("yescaptcha_key", "secret-key")
+
+    response = isolated_modules.config_api.update_config(
+        isolated_modules.config_api.ConfigUpdate(
+            data={
+                "yescaptcha_key": isolated_modules.config_api.MASKED_SECRET_VALUE,
+                "mail_provider": "duckmail",
+            }
+        )
+    )
+
+    assert response["ok"] is True
+    assert "mail_provider" in response["updated"]
+    assert "yescaptcha_key" not in response["updated"]
+    assert isolated_modules.config_store.config_store.get("yescaptcha_key") == "secret-key"
+    assert isolated_modules.config_store.config_store.get("mail_provider") == "duckmail"
 
 
 def test_worker_check_account_returns_validity(isolated_modules):

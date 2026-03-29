@@ -1,6 +1,12 @@
 package configcommand
 
-import "context"
+import (
+	"context"
+
+	configmeta "go-control-plane/internal/application/configmeta"
+)
+
+const MaskedSecretValue = configmeta.MaskedSecretValue
 
 var allowedConfigKeys = map[string]struct{}{
 	"laoudo_auth": {}, "laoudo_email": {}, "laoudo_account_id": {},
@@ -44,6 +50,9 @@ func (h UpdateConfigHandler) Handle(ctx context.Context, cmd UpdateConfigCommand
 	updated := make([]string, 0)
 	for key, value := range cmd.Data {
 		if _, ok := allowedConfigKeys[key]; !ok {
+			continue
+		}
+		if configmeta.IsSecretKey(key) && value == MaskedSecretValue {
 			continue
 		}
 		safe[key] = value

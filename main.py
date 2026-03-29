@@ -20,6 +20,14 @@ from api.worker import router as worker_router
 EXPECTED_CONDA_ENV = os.getenv("APP_CONDA_ENV", "any-auto-register")
 
 
+def get_cors_allow_origins() -> list[str]:
+    raw = os.getenv("APP_CORS_ALLOW_ORIGINS", "*").strip()
+    if not raw:
+        return ["*"]
+    origins = [item.strip() for item in raw.split(",") if item.strip()]
+    return origins or ["*"]
+
+
 def _detect_conda_env() -> str:
     conda_env = os.getenv("CONDA_DEFAULT_ENV")
     if conda_env:
@@ -76,7 +84,7 @@ app = FastAPI(title="Account Manager", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=get_cors_allow_origins(),
     allow_methods=["*"],
     allow_headers=["*"],
 )

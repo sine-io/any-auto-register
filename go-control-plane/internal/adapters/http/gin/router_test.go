@@ -1,6 +1,7 @@
 package gingateway
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -235,22 +236,22 @@ func TestNewRouterExposesTaskAndPlatformEndpoints(t *testing.T) {
 
 	logger := zerologadapter.New("info")
 	router := NewRouterWithDependencies(cfg, logger, Dependencies{
-		ListTasks:         fakeTaskQueryHandler{},
-		ListPlatforms:     fakePlatformQueryHandler{},
-		ListProxies:       fakeListProxiesHandler{},
-		ListAccounts:      fakeListAccountsHandler{},
-		GetDashboardStats: fakeDashboardStatsHandler{},
-		GetConfig:         fakeGetConfigHandler{},
-		UpdateConfig:      fakeUpdateConfigHandler{},
-		GetTask:           fakeGetTaskHandler{},
-		ListTaskLogs:      fakeListTaskLogsHandler{},
-		ListTaskEvents:    fakeListTaskEventsHandler{},
-		GetSolverStatus:   fakeSolverStatusHandler{},
-		RestartSolver:     fakeRestartSolverHandler{},
+		ListTasks:               fakeTaskQueryHandler{},
+		ListPlatforms:           fakePlatformQueryHandler{},
+		ListProxies:             fakeListProxiesHandler{},
+		ListAccounts:            fakeListAccountsHandler{},
+		GetDashboardStats:       fakeDashboardStatsHandler{},
+		GetConfig:               fakeGetConfigHandler{},
+		UpdateConfig:            fakeUpdateConfigHandler{},
+		GetTask:                 fakeGetTaskHandler{},
+		ListTaskLogs:            fakeListTaskLogsHandler{},
+		ListTaskEvents:          fakeListTaskEventsHandler{},
+		GetSolverStatus:         fakeSolverStatusHandler{},
+		RestartSolver:           fakeRestartSolverHandler{},
 		ListIntegrationServices: fakeListIntegrationServicesHandler{},
-		CreateTask:        fakeCreateTaskHandler{},
-		ProxyCommands:     fakeProxyCommandHandler{},
-		IntegrationCommands: fakeIntegrationCommandHandler{},
+		CreateTask:              fakeCreateTaskHandler{},
+		ProxyCommands:           fakeProxyCommandHandler{},
+		IntegrationCommands:     fakeIntegrationCommandHandler{},
 	})
 
 	taskReq := httptest.NewRequest(http.MethodGet, "/tasks?page=1&page_size=10", nil)
@@ -411,6 +412,53 @@ func TestNewRouterExposesRegisterEndpoint(t *testing.T) {
 	}
 }
 
+func TestNewRouterWritesAuditLogsForWriteEndpoints(t *testing.T) {
+	cfg, err := viperconfig.Load("")
+	if err != nil {
+		t.Fatalf("expected config load to succeed, got %v", err)
+	}
+
+	var buf bytes.Buffer
+	logger := zerologadapter.NewWithWriter("info", &buf)
+	router := NewRouterWithDependencies(cfg, logger, Dependencies{
+		CreateTask:   fakeCreateTaskHandler{},
+		UpdateConfig: fakeUpdateConfigHandler{},
+	})
+
+	taskReq := httptest.NewRequest(http.MethodPost, "/tasks/register", strings.NewReader(`{"platform":"dummy","count":1}`))
+	taskReq.Header.Set("Content-Type", "application/json")
+	taskRec := httptest.NewRecorder()
+	router.ServeHTTP(taskRec, taskReq)
+	if taskRec.Code != http.StatusOK {
+		t.Fatalf("expected /tasks/register to return 200, got %d", taskRec.Code)
+	}
+
+	configReq := httptest.NewRequest(http.MethodPut, "/config", strings.NewReader(`{"data":{"mail_provider":"moemail"}}`))
+	configReq.Header.Set("Content-Type", "application/json")
+	configRec := httptest.NewRecorder()
+	router.ServeHTTP(configRec, configReq)
+	if configRec.Code != http.StatusOK {
+		t.Fatalf("expected /config to return 200, got %d", configRec.Code)
+	}
+
+	logOutput := buf.String()
+	if !strings.Contains(logOutput, `"kind":"audit"`) {
+		t.Fatalf("expected audit log marker, got %s", logOutput)
+	}
+	if !strings.Contains(logOutput, `"action":"task.register"`) {
+		t.Fatalf("expected task register audit log, got %s", logOutput)
+	}
+	if !strings.Contains(logOutput, `"task_id":"task_123"`) {
+		t.Fatalf("expected task id in audit log, got %s", logOutput)
+	}
+	if !strings.Contains(logOutput, `"action":"config.update"`) {
+		t.Fatalf("expected config update audit log, got %s", logOutput)
+	}
+	if !strings.Contains(logOutput, `"updated_keys":["mail_provider"]`) {
+		t.Fatalf("expected updated keys in audit log, got %s", logOutput)
+	}
+}
+
 func TestNewRouterExposesCheckAndActionEndpoints(t *testing.T) {
 	cfg, err := viperconfig.Load("")
 	if err != nil {
@@ -444,6 +492,7 @@ func TestNewRouterExposesInternalWorkerEventEndpoints(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected config load to succeed, got %v", err)
 	}
+	cfg.Internal.CallbackToken = "secret-token"
 
 	logger := zerologadapter.New("info")
 	applyHandler := &fakeApplyWorkerEventHandler{}
@@ -451,13 +500,26 @@ func TestNewRouterExposesInternalWorkerEventEndpoints(t *testing.T) {
 		ApplyWorkerEvent: applyHandler,
 	})
 
+	unauthorizedReq := httptest.NewRequest(http.MethodPost, "/internal/worker/tasks/task_1/log", strings.NewReader(`{"message":"hello"}`))
+	unauthorizedReq.Header.Set("Content-Type", "application/json")
+	unauthorizedRec := httptest.NewRecorder()
+	router.ServeHTTP(unauthorizedRec, unauthorizedReq)
+
+	if unauthorizedRec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected missing token to return 401, got %d", unauthorizedRec.Code)
+	}
+	if len(applyHandler.calls) != 0 {
+		t.Fatalf("expected unauthorized request to be ignored, got %#v", applyHandler.calls)
+	}
+
 	req := httptest.NewRequest(http.MethodPost, "/internal/worker/tasks/task_1/log", strings.NewReader(`{"message":"hello"}`))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-AAR-Internal-Callback-Token", "secret-token")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("expected internal worker endpoint to return 200, got %d", rec.Code)
+		t.Fatalf("expected valid token request to return 200, got %d", rec.Code)
 	}
 	if len(applyHandler.calls) != 1 {
 		t.Fatalf("expected one callback event, got %#v", applyHandler.calls)

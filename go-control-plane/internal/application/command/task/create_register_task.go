@@ -52,9 +52,10 @@ type Handler struct {
 	newID           func() string
 	now             func() time.Time
 	callbackBaseURL string
+	callbackToken   string
 }
 
-func NewHandler(repo Repository, worker workerport.Client, newID func() string, now func() time.Time, callbackBaseURLs ...string) Handler {
+func NewHandler(repo Repository, worker workerport.Client, newID func() string, now func() time.Time, callbackBaseURL string, callbackToken string) Handler {
 	if newID == nil {
 		newID = func() string {
 			return fmt.Sprintf("task_%d", time.Now().UnixMilli())
@@ -65,11 +66,14 @@ func NewHandler(repo Repository, worker workerport.Client, newID func() string, 
 			return time.Now().UTC()
 		}
 	}
-	callbackBaseURL := ""
-	if len(callbackBaseURLs) > 0 {
-		callbackBaseURL = callbackBaseURLs[0]
+	return Handler{
+		repo:            repo,
+		worker:          worker,
+		newID:           newID,
+		now:             now,
+		callbackBaseURL: callbackBaseURL,
+		callbackToken:   callbackToken,
 	}
-	return Handler{repo: repo, worker: worker, newID: newID, now: now, callbackBaseURL: callbackBaseURL}
 }
 
 func (h Handler) Handle(ctx context.Context, cmd Command) (Result, error) {
@@ -114,6 +118,7 @@ func (h Handler) runWorkerRegister(ctx context.Context, taskID string, cmd Comma
 	resp, err := h.worker.Register(ctx, workerport.RegisterRequest{
 		TaskID:               taskID,
 		CallbackBaseURL:      h.callbackBaseURL,
+		CallbackToken:        h.callbackToken,
 		Platform:             cmd.Platform,
 		Email:                cmd.Email,
 		Password:             cmd.Password,

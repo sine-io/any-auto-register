@@ -16,6 +16,10 @@ func TestLoadReturnsDefaultServerConfig(t *testing.T) {
 		t.Fatalf("expected default port 8080, got %d", cfg.Server.Port)
 	}
 
+	if cfg.Internal.CallbackToken != "" {
+		t.Fatalf("expected default internal callback token to be empty, got %q", cfg.Internal.CallbackToken)
+	}
+
 	if cfg.Database.URL != "../account_manager.db" {
 		t.Fatalf("expected default database url ../account_manager.db, got %s", cfg.Database.URL)
 	}

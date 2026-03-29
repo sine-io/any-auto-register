@@ -1,6 +1,12 @@
 package configquery
 
-import "context"
+import (
+	"context"
+
+	configmeta "go-control-plane/internal/application/configmeta"
+)
+
+const MaskedSecretValue = configmeta.MaskedSecretValue
 
 var KnownKeys = []string{
 	"laoudo_auth", "laoudo_email", "laoudo_account_id",
@@ -38,7 +44,9 @@ func (h GetConfigHandler) Handle(ctx context.Context) (map[string]string, error)
 	for _, key := range KnownKeys {
 		if _, ok := items[key]; !ok {
 			items[key] = ""
+			continue
 		}
+		items[key] = configmeta.MaskValue(key, items[key])
 	}
 	return items, nil
 }

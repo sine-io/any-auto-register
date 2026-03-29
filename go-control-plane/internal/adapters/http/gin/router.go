@@ -92,25 +92,25 @@ type IntegrationCommandHandler interface {
 }
 
 type Dependencies struct {
-	ListTasks         TaskQueryHandler
-	ListPlatforms     PlatformQueryHandler
-	ListProxies       ListProxiesHandler
-	ListAccounts      ListAccountsHandler
-	GetDashboardStats DashboardStatsHandler
-	GetConfig         GetConfigHandler
-	UpdateConfig      UpdateConfigHandler
-	GetTask           GetTaskHandler
-	ListTaskLogs      ListTaskLogsHandler
-	ListTaskEvents    ListTaskEventsHandler
-	GetSolverStatus   SolverStatusHandler
-	RestartSolver     RestartSolverHandler
+	ListTasks               TaskQueryHandler
+	ListPlatforms           PlatformQueryHandler
+	ListProxies             ListProxiesHandler
+	ListAccounts            ListAccountsHandler
+	GetDashboardStats       DashboardStatsHandler
+	GetConfig               GetConfigHandler
+	UpdateConfig            UpdateConfigHandler
+	GetTask                 GetTaskHandler
+	ListTaskLogs            ListTaskLogsHandler
+	ListTaskEvents          ListTaskEventsHandler
+	GetSolverStatus         SolverStatusHandler
+	RestartSolver           RestartSolverHandler
 	ListIntegrationServices ListIntegrationServicesHandler
-	CreateTask        CreateTaskHandler
-	ApplyWorkerEvent  ApplyWorkerEventHandler
-	CheckAccount      CheckAccountHandler
-	ExecuteAction     ExecuteActionHandler
-	ProxyCommands     ProxyCommandHandler
-	IntegrationCommands IntegrationCommandHandler
+	CreateTask              CreateTaskHandler
+	ApplyWorkerEvent        ApplyWorkerEventHandler
+	CheckAccount            CheckAccountHandler
+	ExecuteAction           ExecuteActionHandler
+	ProxyCommands           ProxyCommandHandler
+	IntegrationCommands     IntegrationCommandHandler
 }
 
 type CreateTaskHandler interface {
@@ -163,39 +163,36 @@ func buildDependencies(db *sql.DB, cfg viperconfig.AppConfig) Dependencies {
 	integrationHandler := integrationcommand.NewHandler(workerClient)
 
 	return Dependencies{
-		ListTasks:         taskquery.NewHandler(taskRepo),
-		ListPlatforms:     platformquery.NewHandler(platformRepo),
-		ListProxies:       proxyquery.NewListProxiesHandler(proxyRepo),
-		ListAccounts:      accountquery.NewListAccountsHandler(accountRepo),
-		GetDashboardStats: accountquery.NewDashboardStatsHandler(accountRepo),
-		GetConfig:         configquery.NewGetConfigHandler(configRepo),
-		UpdateConfig:      configcommand.NewUpdateConfigHandler(configRepo),
-		GetTask:           taskquery.NewGetTaskHandler(taskRepo),
-		ListTaskLogs:      taskquery.NewListLogsHandler(taskRepo),
-		ListTaskEvents:    taskquery.NewListEventsHandler(taskRepo),
-		GetSolverStatus:   systemquery.NewSolverStatusHandler(workerClient),
-		RestartSolver:     systemcommand.NewRestartSolverHandler(workerClient),
+		ListTasks:               taskquery.NewHandler(taskRepo),
+		ListPlatforms:           platformquery.NewHandler(platformRepo),
+		ListProxies:             proxyquery.NewListProxiesHandler(proxyRepo),
+		ListAccounts:            accountquery.NewListAccountsHandler(accountRepo),
+		GetDashboardStats:       accountquery.NewDashboardStatsHandler(accountRepo),
+		GetConfig:               configquery.NewGetConfigHandler(configRepo),
+		UpdateConfig:            configcommand.NewUpdateConfigHandler(configRepo),
+		GetTask:                 taskquery.NewGetTaskHandler(taskRepo),
+		ListTaskLogs:            taskquery.NewListLogsHandler(taskRepo),
+		ListTaskEvents:          taskquery.NewListEventsHandler(taskRepo),
+		GetSolverStatus:         systemquery.NewSolverStatusHandler(workerClient),
+		RestartSolver:           systemcommand.NewRestartSolverHandler(workerClient),
 		ListIntegrationServices: integrationquery.NewListServicesHandler(workerClient),
-		CreateTask:        taskcommand.NewHandler(taskCommandRepo, workerClient, nil, nil, callbackBaseURL),
-		ApplyWorkerEvent:  applyWorkerEvent,
-		CheckAccount:      accountcommand.NewCheckAccountHandler(accountRepo, workerClient),
-		ExecuteAction:     actioncommand.NewExecutePlatformActionHandler(accountRepo, workerClient),
-		ProxyCommands:     proxycommand.NewProxyCommandHandler(proxyRepo),
-		IntegrationCommands: integrationHandler,
+		CreateTask:              taskcommand.NewHandler(taskCommandRepo, workerClient, nil, nil, callbackBaseURL, cfg.Internal.CallbackToken),
+		ApplyWorkerEvent:        applyWorkerEvent,
+		CheckAccount:            accountcommand.NewCheckAccountHandler(accountRepo, workerClient),
+		ExecuteAction:           actioncommand.NewExecutePlatformActionHandler(accountRepo, workerClient),
+		ProxyCommands:           proxycommand.NewProxyCommandHandler(proxyRepo),
+		IntegrationCommands:     integrationHandler,
 	}
 }
 
 func NewRouterWithDependencies(cfg viperconfig.AppConfig, logger zerolog.Logger, deps Dependencies) *gin.Engine {
-	_ = cfg
-	_ = logger
-
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Recovery())
 
-	registerPublicRoutes(router, deps)
-	registerPublicRoutes(router.Group("/api"), deps)
-	registerInternalWorkerRoutes(router, deps)
+	registerPublicRoutes(router, deps, logger)
+	registerPublicRoutes(router.Group("/api"), deps, logger)
+	registerInternalWorkerRoutes(router, deps, cfg.Internal.CallbackToken)
 
 	return router
 }
@@ -208,7 +205,7 @@ type routeRegistrar interface {
 	DELETE(string, ...gin.HandlerFunc) gin.IRoutes
 }
 
-func registerPublicRoutes(router routeRegistrar, deps Dependencies) {
+func registerPublicRoutes(router routeRegistrar, deps Dependencies, logger zerolog.Logger) {
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{
 			"status":  "ok",
@@ -317,14 +314,24 @@ func registerPublicRoutes(router routeRegistrar, deps Dependencies) {
 		}
 		var cmd taskcommand.Command
 		if err := c.ShouldBindJSON(&cmd); err != nil {
+			auditLog(logger, "task.register", "invalid_request", nil, err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 		result, err := deps.CreateTask.Handle(c.Request.Context(), cmd)
 		if err != nil {
+			auditLog(logger, "task.register", "error", map[string]any{
+				"platform": cmd.Platform,
+				"count":    cmd.Count,
+			}, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		auditLog(logger, "task.register", "ok", map[string]any{
+			"platform": cmd.Platform,
+			"count":    cmd.Count,
+			"task_id":  result.TaskID,
+		}, nil)
 		c.JSON(http.StatusOK, gin.H{"task_id": result.TaskID})
 	})
 
@@ -393,14 +400,17 @@ func registerPublicRoutes(router routeRegistrar, deps Dependencies) {
 		}
 		var cmd configcommand.UpdateConfigCommand
 		if err := c.ShouldBindJSON(&cmd); err != nil {
+			auditLog(logger, "config.update", "invalid_request", nil, err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 		result, err := deps.UpdateConfig.Handle(c.Request.Context(), cmd)
 		if err != nil {
+			auditLog(logger, "config.update", "error", nil, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		auditLog(logger, "config.update", "ok", map[string]any{"updated_keys": result.Updated}, nil)
 		c.JSON(http.StatusOK, result)
 	})
 
@@ -424,14 +434,20 @@ func registerPublicRoutes(router routeRegistrar, deps Dependencies) {
 		}
 		var cmd proxycommand.AddProxyCommand
 		if err := c.ShouldBindJSON(&cmd); err != nil {
+			auditLog(logger, "proxy.add", "invalid_request", nil, err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 		result, err := deps.ProxyCommands.Add(c.Request.Context(), cmd)
 		if err != nil {
+			auditLog(logger, "proxy.add", "error", map[string]any{"region": cmd.Region}, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		auditLog(logger, "proxy.add", "ok", map[string]any{
+			"region":   cmd.Region,
+			"proxy_id": result["id"],
+		}, nil)
 		c.JSON(http.StatusOK, result)
 	})
 
@@ -442,14 +458,24 @@ func registerPublicRoutes(router routeRegistrar, deps Dependencies) {
 		}
 		var cmd proxycommand.BulkAddProxiesCommand
 		if err := c.ShouldBindJSON(&cmd); err != nil {
+			auditLog(logger, "proxy.bulk_add", "invalid_request", nil, err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 		result, err := deps.ProxyCommands.BulkAdd(c.Request.Context(), cmd)
 		if err != nil {
+			auditLog(logger, "proxy.bulk_add", "error", map[string]any{
+				"region": cmd.Region,
+				"count":  len(cmd.Proxies),
+			}, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		auditLog(logger, "proxy.bulk_add", "ok", map[string]any{
+			"region": cmd.Region,
+			"count":  len(cmd.Proxies),
+			"added":  result["added"],
+		}, nil)
 		c.JSON(http.StatusOK, result)
 	})
 
@@ -460,14 +486,17 @@ func registerPublicRoutes(router routeRegistrar, deps Dependencies) {
 		}
 		proxyID, err := strconv.ParseInt(c.Param("proxyID"), 10, 64)
 		if err != nil {
+			auditLog(logger, "proxy.delete", "invalid_request", nil, err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid proxy id"})
 			return
 		}
 		result, err := deps.ProxyCommands.Delete(c.Request.Context(), proxycommand.DeleteProxyCommand{ProxyID: proxyID})
 		if err != nil {
+			auditLog(logger, "proxy.delete", "error", map[string]any{"proxy_id": proxyID}, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		auditLog(logger, "proxy.delete", "ok", map[string]any{"proxy_id": proxyID}, nil)
 		c.JSON(http.StatusOK, result)
 	})
 
@@ -478,14 +507,20 @@ func registerPublicRoutes(router routeRegistrar, deps Dependencies) {
 		}
 		proxyID, err := strconv.ParseInt(c.Param("proxyID"), 10, 64)
 		if err != nil {
+			auditLog(logger, "proxy.toggle", "invalid_request", nil, err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid proxy id"})
 			return
 		}
 		result, err := deps.ProxyCommands.Toggle(c.Request.Context(), proxycommand.ToggleProxyCommand{ProxyID: proxyID})
 		if err != nil {
+			auditLog(logger, "proxy.toggle", "error", map[string]any{"proxy_id": proxyID}, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		auditLog(logger, "proxy.toggle", "ok", map[string]any{
+			"proxy_id":  proxyID,
+			"is_active": result["is_active"],
+		}, nil)
 		c.JSON(http.StatusOK, result)
 	})
 
@@ -496,9 +531,11 @@ func registerPublicRoutes(router routeRegistrar, deps Dependencies) {
 		}
 		result, err := deps.ProxyCommands.Check(c.Request.Context(), proxycommand.CheckProxiesCommand{})
 		if err != nil {
+			auditLog(logger, "proxy.check", "error", nil, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		auditLog(logger, "proxy.check", "ok", nil, nil)
 		c.JSON(http.StatusOK, result)
 	})
 
@@ -522,9 +559,11 @@ func registerPublicRoutes(router routeRegistrar, deps Dependencies) {
 		}
 		result, err := deps.RestartSolver.Handle(c.Request.Context())
 		if err != nil {
+			auditLog(logger, "solver.restart", "error", nil, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		auditLog(logger, "solver.restart", "ok", nil, nil)
 		c.JSON(http.StatusOK, result)
 	})
 
@@ -548,9 +587,11 @@ func registerPublicRoutes(router routeRegistrar, deps Dependencies) {
 		}
 		result, err := deps.IntegrationCommands.StartAll(c.Request.Context())
 		if err != nil {
+			auditLog(logger, "integration.start_all", "error", nil, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		auditLog(logger, "integration.start_all", "ok", nil, nil)
 		c.JSON(http.StatusOK, result)
 	})
 
@@ -561,9 +602,11 @@ func registerPublicRoutes(router routeRegistrar, deps Dependencies) {
 		}
 		result, err := deps.IntegrationCommands.StopAll(c.Request.Context())
 		if err != nil {
+			auditLog(logger, "integration.stop_all", "error", nil, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		auditLog(logger, "integration.stop_all", "ok", nil, nil)
 		c.JSON(http.StatusOK, result)
 	})
 
@@ -572,11 +615,14 @@ func registerPublicRoutes(router routeRegistrar, deps Dependencies) {
 			c.JSON(http.StatusNotImplemented, gin.H{"error": "integration command handler not configured"})
 			return
 		}
-		result, err := deps.IntegrationCommands.Start(c.Request.Context(), c.Param("name"))
+		name := c.Param("name")
+		result, err := deps.IntegrationCommands.Start(c.Request.Context(), name)
 		if err != nil {
+			auditLog(logger, "integration.start", "error", map[string]any{"name": name}, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		auditLog(logger, "integration.start", "ok", map[string]any{"name": name}, nil)
 		c.JSON(http.StatusOK, result)
 	})
 
@@ -585,11 +631,14 @@ func registerPublicRoutes(router routeRegistrar, deps Dependencies) {
 			c.JSON(http.StatusNotImplemented, gin.H{"error": "integration command handler not configured"})
 			return
 		}
-		result, err := deps.IntegrationCommands.Install(c.Request.Context(), c.Param("name"))
+		name := c.Param("name")
+		result, err := deps.IntegrationCommands.Install(c.Request.Context(), name)
 		if err != nil {
+			auditLog(logger, "integration.install", "error", map[string]any{"name": name}, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		auditLog(logger, "integration.install", "ok", map[string]any{"name": name}, nil)
 		c.JSON(http.StatusOK, result)
 	})
 
@@ -598,11 +647,14 @@ func registerPublicRoutes(router routeRegistrar, deps Dependencies) {
 			c.JSON(http.StatusNotImplemented, gin.H{"error": "integration command handler not configured"})
 			return
 		}
-		result, err := deps.IntegrationCommands.Stop(c.Request.Context(), c.Param("name"))
+		name := c.Param("name")
+		result, err := deps.IntegrationCommands.Stop(c.Request.Context(), name)
 		if err != nil {
+			auditLog(logger, "integration.stop", "error", map[string]any{"name": name}, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		auditLog(logger, "integration.stop", "ok", map[string]any{"name": name}, nil)
 		c.JSON(http.StatusOK, result)
 	})
 
@@ -615,14 +667,17 @@ func registerPublicRoutes(router routeRegistrar, deps Dependencies) {
 			Platforms []string `json:"platforms"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
+			auditLog(logger, "integration.backfill", "invalid_request", nil, err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 		result, err := deps.IntegrationCommands.Backfill(c.Request.Context(), body.Platforms)
 		if err != nil {
+			auditLog(logger, "integration.backfill", "error", map[string]any{"platforms": body.Platforms}, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		auditLog(logger, "integration.backfill", "ok", map[string]any{"platforms": body.Platforms}, nil)
 		c.JSON(http.StatusOK, result)
 	})
 
@@ -633,14 +688,20 @@ func registerPublicRoutes(router routeRegistrar, deps Dependencies) {
 		}
 		accountID, err := strconv.ParseInt(c.Param("accountID"), 10, 64)
 		if err != nil {
+			auditLog(logger, "account.check", "invalid_request", nil, err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid account id"})
 			return
 		}
 		result, err := deps.CheckAccount.Handle(c.Request.Context(), accountcommand.CheckAccountCommand{AccountID: accountID})
 		if err != nil {
+			auditLog(logger, "account.check", "error", map[string]any{"account_id": accountID}, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		auditLog(logger, "account.check", "ok", map[string]any{
+			"account_id": accountID,
+			"valid":      result.Valid,
+		}, nil)
 		c.JSON(http.StatusOK, result)
 	})
 
@@ -651,6 +712,7 @@ func registerPublicRoutes(router routeRegistrar, deps Dependencies) {
 		}
 		accountID, err := strconv.ParseInt(c.Param("accountID"), 10, 64)
 		if err != nil {
+			auditLog(logger, "action.execute", "invalid_request", nil, err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid account id"})
 			return
 		}
@@ -658,19 +720,33 @@ func registerPublicRoutes(router routeRegistrar, deps Dependencies) {
 			Params map[string]any `json:"params"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
+			auditLog(logger, "action.execute", "invalid_request", nil, err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+		platform := c.Param("platform")
+		actionID := c.Param("actionID")
 		result, err := deps.ExecuteAction.Handle(c.Request.Context(), actioncommand.ExecutePlatformActionCommand{
-			Platform:  c.Param("platform"),
+			Platform:  platform,
 			AccountID: accountID,
-			ActionID:  c.Param("actionID"),
+			ActionID:  actionID,
 			Params:    body.Params,
 		})
 		if err != nil {
+			auditLog(logger, "action.execute", "error", map[string]any{
+				"platform":   platform,
+				"account_id": accountID,
+				"action_id":  actionID,
+			}, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		auditLog(logger, "action.execute", "ok", map[string]any{
+			"platform":   platform,
+			"account_id": accountID,
+			"action_id":  actionID,
+			"ok":         result.OK,
+		}, nil)
 		c.JSON(http.StatusOK, result)
 	})
 }
@@ -681,4 +757,18 @@ func parseInt(raw string, fallback int) int {
 		return fallback
 	}
 	return value
+}
+
+func auditLog(logger zerolog.Logger, action string, result string, fields map[string]any, err error) {
+	event := logger.Info().
+		Str("kind", "audit").
+		Str("action", action).
+		Str("result", result)
+	if err != nil {
+		event = event.Str("error", err.Error())
+	}
+	for key, value := range fields {
+		event = event.Interface(key, value)
+	}
+	event.Msg("audit")
 }

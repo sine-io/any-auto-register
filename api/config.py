@@ -4,6 +4,8 @@ from core.config_store import config_store
 
 router = APIRouter(prefix="/config", tags=["config"])
 
+MASKED_SECRET_VALUE = "********"
+
 CONFIG_KEYS = [
     "laoudo_auth", "laoudo_email", "laoudo_account_id",
     "yescaptcha_key", "twocaptcha_key",
@@ -20,6 +22,20 @@ CONFIG_KEYS = [
     "kiro_manager_path", "kiro_manager_exe",
 ]
 
+SECRET_CONFIG_KEYS = {
+    "laoudo_auth",
+    "yescaptcha_key",
+    "twocaptcha_key",
+    "duckmail_bearer",
+    "freemail_admin_token",
+    "freemail_password",
+    "cfworker_admin_token",
+    "cpa_api_key",
+    "team_manager_key",
+    "cliproxyapi_management_key",
+    "grok2api_app_key",
+}
+
 
 class ConfigUpdate(BaseModel):
     data: dict
@@ -28,13 +44,24 @@ class ConfigUpdate(BaseModel):
 @router.get("")
 def get_config():
     all_cfg = config_store.get_all()
-    # 只返回已知 key，未设置的返回空字符串
-    return {k: all_cfg.get(k, "") for k in CONFIG_KEYS}
+    payload = {}
+    for key in CONFIG_KEYS:
+        value = all_cfg.get(key, "")
+        if key in SECRET_CONFIG_KEYS and value:
+            payload[key] = MASKED_SECRET_VALUE
+        else:
+            payload[key] = value
+    return payload
 
 
 @router.put("")
 def update_config(body: ConfigUpdate):
-    # 只允许更新已知 key
-    safe = {k: v for k, v in body.data.items() if k in CONFIG_KEYS}
+    safe = {}
+    for key, value in body.data.items():
+        if key not in CONFIG_KEYS:
+            continue
+        if key in SECRET_CONFIG_KEYS and value == MASKED_SECRET_VALUE:
+            continue
+        safe[key] = value
     config_store.set_many(safe)
     return {"ok": True, "updated": list(safe.keys())}
