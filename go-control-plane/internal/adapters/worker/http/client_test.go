@@ -94,7 +94,7 @@ func TestClientGetsSolverStatus(t *testing.T) {
 		if r.URL.Path != "/api/solver/status" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
-		_ = json.NewEncoder(w).Encode(workerport.SolverStatusResponse{Running: true})
+		_ = json.NewEncoder(w).Encode(workerport.SolverStatusResponse{Running: true, Status: "running", Reason: ""})
 	}))
 	defer server.Close()
 
@@ -102,6 +102,9 @@ func TestClientGetsSolverStatus(t *testing.T) {
 	result, err := client.GetSolverStatus(context.Background())
 	if err != nil || !result.Running {
 		t.Fatalf("unexpected solver status: %#v err=%v", result, err)
+	}
+	if result.Status != "running" || result.Reason != "" {
+		t.Fatalf("expected rich solver fields, got %#v", result)
 	}
 }
 

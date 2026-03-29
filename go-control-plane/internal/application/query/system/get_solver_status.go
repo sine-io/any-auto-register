@@ -7,7 +7,9 @@ import (
 )
 
 type SolverStatusResult struct {
-	Running bool `json:"running"`
+	Running bool   `json:"running"`
+	Status  string `json:"status"`
+	Reason  string `json:"reason"`
 }
 
 type SolverStatusHandler struct {
@@ -23,5 +25,9 @@ func (h SolverStatusHandler) Handle(ctx context.Context) (SolverStatusResult, er
 	if err != nil {
 		return SolverStatusResult{}, err
 	}
-	return SolverStatusResult{Running: resp.Running}, nil
+	return SolverStatusResult{
+		Running: resp.Running,
+		Status:  resp.Status,
+		Reason:  resp.Reason,
+	}, nil
 }

@@ -57,7 +57,9 @@ type ListActionsResponse struct {
 }
 
 type SolverStatusResponse struct {
-	Running bool `json:"running"`
+	Running bool   `json:"running"`
+	Status  string `json:"status"`
+	Reason  string `json:"reason"`
 }
 
 type IntegrationServicesResponse struct {

@@ -101,8 +101,8 @@ app.include_router(worker_router, prefix="/api")
 
 @app.get("/api/solver/status")
 def solver_status():
-    from services.solver_manager import is_running
-    return {"running": is_running()}
+    from services.solver_manager import get_status
+    return get_status()
 
 
 @app.post("/api/solver/restart")

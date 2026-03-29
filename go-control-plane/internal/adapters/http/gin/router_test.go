@@ -201,7 +201,7 @@ func (fakeProxyCommandHandler) Check(context.Context, proxycommand.CheckProxiesC
 type fakeSolverStatusHandler struct{}
 
 func (fakeSolverStatusHandler) Handle(context.Context) (systemquery.SolverStatusResult, error) {
-	return systemquery.SolverStatusResult{Running: true}, nil
+	return systemquery.SolverStatusResult{Running: true, Status: "running", Reason: ""}, nil
 }
 
 type fakeRestartSolverHandler struct{}
@@ -369,6 +369,9 @@ func TestNewRouterExposesTaskAndPlatformEndpoints(t *testing.T) {
 	router.ServeHTTP(solverRec, solverReq)
 	if solverRec.Code != http.StatusOK {
 		t.Fatalf("expected /api/solver/status to return 200, got %d", solverRec.Code)
+	}
+	if !strings.Contains(solverRec.Body.String(), `"status":"running"`) {
+		t.Fatalf("expected /api/solver/status to include rich state, got %s", solverRec.Body.String())
 	}
 
 	solverRestartReq := httptest.NewRequest(http.MethodPost, "/api/solver/restart", strings.NewReader(`{}`))

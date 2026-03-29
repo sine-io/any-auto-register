@@ -1,5 +1,6 @@
 import pathlib
 import importlib
+import subprocess
 import time
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -206,6 +207,90 @@ def test_main_reads_cors_allow_origins_from_env(monkeypatch):
         "http://localhost:3000",
         "https://app.example.com",
     ]
+
+
+def test_solver_stop_kills_process_after_timeout(monkeypatch):
+    import services.solver_manager as solver_manager
+
+    class FakeProc:
+        def __init__(self):
+            self.terminated = False
+            self.killed = False
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            self.terminated = True
+
+        def wait(self, timeout=None):
+            if not self.killed:
+                raise subprocess.TimeoutExpired(cmd=["solver"], timeout=timeout)
+            return 0
+
+        def kill(self):
+            self.killed = True
+
+    class FakeLogFile:
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    proc = FakeProc()
+    log_file = FakeLogFile()
+    monkeypatch.setattr(solver_manager, "_proc", proc)
+    monkeypatch.setattr(solver_manager, "_log_file", log_file)
+
+    solver_manager.stop()
+
+    assert proc.terminated is True
+    assert proc.killed is True
+    assert log_file.closed is True
+    assert solver_manager._proc is None
+    assert solver_manager._log_file is None
+
+
+def test_solver_status_includes_rich_state(monkeypatch):
+    import main
+    import services.solver_manager as solver_manager
+
+    monkeypatch.setattr(
+        solver_manager,
+        "get_status",
+        lambda: {"running": True, "status": "running", "reason": ""},
+        raising=False,
+    )
+    monkeypatch.setattr(solver_manager, "is_running", lambda: True)
+
+    assert main.solver_status() == {
+        "running": True,
+        "status": "running",
+        "reason": "",
+    }
+
+
+def test_solver_start_async_marks_status_starting(monkeypatch):
+    import services.solver_manager as solver_manager
+
+    class FakeThread:
+        def __init__(self, target=None, daemon=None):
+            self.target = target
+            self.daemon = daemon
+            self.started = False
+
+        def start(self):
+            self.started = True
+
+    monkeypatch.setattr(solver_manager.threading, "Thread", FakeThread)
+    monkeypatch.setattr(solver_manager, "_state", "stopped")
+    monkeypatch.setattr(solver_manager, "_reason", "")
+    monkeypatch.setattr(solver_manager, "is_running", lambda: False)
+
+    solver_manager.start_async()
+
+    assert solver_manager.get_status()["status"] == "starting"
 
 
 def test_python_config_masks_secret_values_on_read(isolated_modules):
