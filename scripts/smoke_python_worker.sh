@@ -42,6 +42,28 @@ wait_for_url "http://${HOST}:${PORT}/api/platforms" 60 1 || {
   exit 1
 }
 
+python3 - <<'PY' "http://${HOST}:${PORT}"
+import json
+import sys
+import urllib.request
+
+base = sys.argv[1]
+with urllib.request.urlopen(base + "/api/solver/status", timeout=10) as resp:
+    payload = json.load(resp)
+
+if "running" not in payload or "status" not in payload or "reason" not in payload:
+    raise SystemExit(f"unexpected solver status payload: {payload!r}")
+
+status = payload.get("status")
+reason = payload.get("reason")
+
+if status not in {"checking", "starting", "running", "failed", "stopped"}:
+    raise SystemExit(f"unexpected solver status value: {payload!r}")
+
+if not isinstance(reason, str):
+    raise SystemExit(f"unexpected solver reason value: {payload!r}")
+PY
+
 curl -fsS "http://${HOST}:${PORT}/api/platforms" >/dev/null
 curl -fsS "http://${HOST}:${PORT}/api/config" >/dev/null
 curl -fsS "http://${HOST}:${PORT}/api/solver/status" >/dev/null

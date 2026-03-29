@@ -30,10 +30,8 @@ def is_running() -> bool:
 
 
 def get_status() -> dict:
-    with _lock:
-        state = _state
-        reason = _reason
-
+    state = _state
+    reason = _reason
     running = is_running()
     if running and state != "running":
         return {"running": True, "status": "running", "reason": ""}

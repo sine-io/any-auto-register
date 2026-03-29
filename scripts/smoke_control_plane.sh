@@ -50,10 +50,56 @@ wait_for_url "${BASE_URL}/solver/status" 90 2 || {
   exit 1
 }
 
+python3 - <<'PY' "$BASE_URL"
+import json
+import sys
+import urllib.request
+
+base = sys.argv[1]
+with urllib.request.urlopen(base + "/solver/status", timeout=10) as resp:
+    payload = json.load(resp)
+
+if "running" not in payload or "status" not in payload or "reason" not in payload:
+    raise SystemExit(f"unexpected solver status payload: {payload!r}")
+
+if payload.get("status") not in {"starting", "running", "failed", "stopped"}:
+    raise SystemExit(f"unexpected solver status value: {payload!r}")
+PY
+
 curl -fsS "${BASE_URL}/health" >/dev/null
 curl -fsS "${BASE_URL}/platforms" >/dev/null
 curl -fsS "${BASE_URL}/config" >/dev/null
 curl -fsS "${BASE_URL}/solver/status" >/dev/null
+
+python3 - <<'PY' "$BASE_URL"
+import json
+import sys
+import time
+import urllib.request
+
+base = sys.argv[1]
+req = urllib.request.Request(
+    base + "/solver/restart",
+    data=b"{}",
+    headers={"Content-Type": "application/json"},
+)
+with urllib.request.urlopen(req, timeout=30):
+    pass
+
+deadline = time.time() + 60
+last = None
+while time.time() < deadline:
+    with urllib.request.urlopen(base + "/solver/status", timeout=10) as resp:
+        payload = json.load(resp)
+    last = payload
+    if payload.get("status") == "running":
+        break
+    if payload.get("status") == "failed":
+        raise SystemExit(f"solver restart failed: {payload.get('reason', '')}")
+    time.sleep(2)
+else:
+    raise SystemExit(f"solver restart did not settle: {last!r}")
+PY
 
 TASK_ID="$(
   python3 - <<'PY' "$BASE_URL"

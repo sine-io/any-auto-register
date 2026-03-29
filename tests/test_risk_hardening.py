@@ -295,6 +295,32 @@ def test_solver_start_async_marks_status_starting(monkeypatch):
     assert solver_manager.get_status()["status"] == "starting"
 
 
+def test_solver_get_status_does_not_block_on_internal_lock(monkeypatch):
+    import services.solver_manager as solver_manager
+
+    solver_manager._state = "starting"
+    solver_manager._reason = ""
+
+    original_lock = solver_manager._lock
+    original_lock.acquire()
+    result: dict[str, object] = {}
+
+    def _read_status():
+        result["value"] = solver_manager.get_status()
+
+    reader = threading.Thread(target=_read_status)
+    reader.start()
+    try:
+        reader.join(timeout=0.2)
+        assert reader.is_alive() is False
+    finally:
+        original_lock.release()
+    reader.join(timeout=1)
+
+    assert "value" in result
+    assert result["value"]["status"] == "starting"
+
+
 def test_turnstile_server_shutdown_closes_managed_resources():
     solver_dir = ROOT / "services" / "turnstile_solver"
     if str(solver_dir) not in sys.path:
@@ -458,6 +484,15 @@ def test_smoke_script_disables_camoufox_prefetch_by_default():
     assert 'PYTHON_VNC_PORT="${PYTHON_VNC_PORT:-16080}"' in script
     assert 'BASE_URL="${SMOKE_BASE_URL:-http://127.0.0.1:${GATEWAY_PORT}/api-go}"' in script
     assert 'wait_for_url "${BASE_URL}/solver/status"' in script
+    assert "/solver/restart" in script
+    assert 'payload.get("status")' in script
+
+
+def test_python_worker_smoke_checks_rich_solver_state():
+    script = (ROOT / "scripts" / "smoke_python_worker.sh").read_text(encoding="utf-8")
+    assert "/api/solver/status" in script
+    assert 'payload.get("status")' in script
+    assert 'payload.get("reason"' in script
 
 
 def test_frontend_routes_actions_through_go_control_plane():
