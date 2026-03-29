@@ -46,6 +46,20 @@ npm run build
 
 ## 4. 本地联调验证
 
+优先执行：
+
+```bash
+bash scripts/smoke_python_worker.sh
+```
+
+以及：
+
+```bash
+bash scripts/smoke_control_plane.sh
+```
+
+如果自动化脚本失败，再按下面的分步命令排查。
+
 ### 启动 Python Worker
 
 ```bash
@@ -115,7 +129,21 @@ curl -X POST http://127.0.0.1:8080/api/tasks/register \
 - `/api` 代理到 Python
 - `/api-go` 代理到 Go
 
-## 8. 部署文件确认
+## 8. Docker 冒烟确认
+
+优先执行：
+
+```bash
+bash scripts/smoke_control_plane.sh
+```
+
+通过条件：
+
+- Go `/health` 可访问
+- `tasks/register -> tasks/:id -> logs/stream` 路径可达
+- `solver/status`、`config`、`platforms` 可访问
+
+## 9. 部署文件确认
 
 检查这些文件：
 
@@ -129,7 +157,7 @@ curl -X POST http://127.0.0.1:8080/api/tasks/register \
 - 双后端部署文件齐全
 - Caddy 路由规则与前端 `VITE_*_API_BASE` 对应
 
-## 9. 文档确认
+## 10. 文档确认
 
 检查这些文档：
 
@@ -138,7 +166,7 @@ curl -X POST http://127.0.0.1:8080/api/tasks/register \
 - [docs/superpowers/specs/2026-03-28-go-control-plane-design.md](/root/any-auto-register/docs/superpowers/specs/2026-03-28-go-control-plane-design.md)
 - [docs/superpowers/plans/2026-03-28-go-control-plane-migration.md](/root/any-auto-register/docs/superpowers/plans/2026-03-28-go-control-plane-migration.md)
 
-## 10. 提交判定
+## 11. 提交判定
 
 满足以下条件再提交：
 

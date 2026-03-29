@@ -36,7 +36,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 安装 Playwright 浏览器
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 RUN playwright install chromium --with-deps || true
-RUN python -m camoufox fetch
+ARG PREFETCH_CAMOUFOX=1
+RUN if [ "$PREFETCH_CAMOUFOX" = "1" ]; then python -m camoufox fetch; fi
 
 # 复制后端代码
 COPY . .

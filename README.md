@@ -296,6 +296,20 @@ volumes:
 docker compose -f docker-compose.control-plane.yml up --build
 ```
 
+如果你想先做一轮自动化冒烟验证，优先执行：
+
+```bash
+bash scripts/smoke_python_worker.sh
+bash scripts/smoke_control_plane.sh
+```
+
+其中 `smoke_control_plane.sh` 默认会设置 `PREFETCH_CAMOUFOX=0`，避免在 CI 或低磁盘环境里因为预取 Camoufox 而把镜像构建打爆。正式部署仍保持 compose 默认 `PREFETCH_CAMOUFOX=1`。
+
+仓库也提供了对应的 GitHub Actions：
+
+- `.github/workflows/control-plane-ci.yml`
+- `.github/workflows/docker-smoke.yml`
+
 这套部署会启动 3 个服务：
 
 - `python-worker`：保留浏览器自动化、邮箱、验证码和平台执行逻辑

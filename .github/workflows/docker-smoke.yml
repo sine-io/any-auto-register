@@ -1,0 +1,27 @@
+name: docker-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - 'docker-compose.control-plane.yml'
+      - 'deploy/Caddyfile'
+      - 'go-control-plane/**'
+      - 'api/**'
+      - 'core/**'
+      - 'services/**'
+      - 'frontend/**'
+      - 'scripts/smoke_control_plane.sh'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    env:
+      PREFETCH_CAMOUFOX: 0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run control plane smoke
+        run: bash scripts/smoke_control_plane.sh

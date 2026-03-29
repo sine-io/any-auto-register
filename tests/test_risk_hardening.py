@@ -8,6 +8,8 @@ from fastapi import BackgroundTasks
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+
 
 def register_dummy_platform(modules, *, name="dummy", available=True, reason=""):
     BasePlatform = modules.base_platform.BasePlatform
@@ -286,8 +288,26 @@ def test_worker_execute_action_returns_platform_result(isolated_modules):
 
 
 def test_dockerfile_prefetches_camoufox_for_solver_runtime():
-    dockerfile = pathlib.Path("/root/any-auto-register/Dockerfile").read_text(encoding="utf-8")
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert "ARG PREFETCH_CAMOUFOX=1" in dockerfile
     assert "python -m camoufox fetch" in dockerfile
+    assert 'if [ "$PREFETCH_CAMOUFOX" = "1" ]' in dockerfile
+
+
+def test_compose_exposes_optional_camoufox_prefetch_arg():
+    compose = (ROOT / "docker-compose.control-plane.yml").read_text(encoding="utf-8")
+    assert "PREFETCH_CAMOUFOX" in compose
+    assert "GATEWAY_PORT" in compose
+    assert "PYTHON_VNC_PORT" in compose
+
+
+def test_smoke_script_disables_camoufox_prefetch_by_default():
+    script = (ROOT / "scripts" / "smoke_control_plane.sh").read_text(encoding="utf-8")
+    assert 'PREFETCH_CAMOUFOX="${PREFETCH_CAMOUFOX:-0}"' in script
+    assert 'GATEWAY_PORT="${GATEWAY_PORT:-18080}"' in script
+    assert 'PYTHON_VNC_PORT="${PYTHON_VNC_PORT:-16080}"' in script
+    assert 'BASE_URL="${SMOKE_BASE_URL:-http://127.0.0.1:${GATEWAY_PORT}/api-go}"' in script
+    assert 'wait_for_url "${BASE_URL}/solver/status"' in script
 
 
 def test_task_event_buffer_flushes_in_batch(isolated_modules):

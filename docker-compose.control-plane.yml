@@ -5,6 +5,7 @@ services:
       args:
         VITE_PY_API_BASE: /api
         VITE_GO_API_BASE: /api-go
+        PREFETCH_CAMOUFOX: ${PREFETCH_CAMOUFOX:-1}
     environment:
       - DISPLAY=:99
       - APP_DB_URL=sqlite:////app/data/account_manager.db
@@ -13,7 +14,7 @@ services:
     expose:
       - "8000"
     ports:
-      - "6080:6080"
+      - "${PYTHON_VNC_PORT:-6080}:6080"
     restart: unless-stopped
 
   go-control-plane:
@@ -40,5 +41,5 @@ services:
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
     ports:
-      - "8000:8000"
+      - "${GATEWAY_PORT:-8000}:8000"
     restart: unless-stopped

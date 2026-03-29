@@ -8,6 +8,15 @@
 
 ## 1. 本地开发联调
 
+优先使用自动化脚本：
+
+```bash
+bash scripts/smoke_python_worker.sh
+bash scripts/smoke_control_plane.sh
+```
+
+如果需要逐步排查，再按下面的手工步骤执行。
+
 ### 1.1 启动 Python Worker
 
 ```bash
@@ -133,7 +142,7 @@ npm run dev
 环境具备 Docker 后执行：
 
 ```bash
-docker compose -f docker-compose.control-plane.yml up --build
+bash scripts/smoke_control_plane.sh
 ```
 
 确认：
@@ -143,6 +152,12 @@ docker compose -f docker-compose.control-plane.yml up --build
 - `python-worker` 可访问 `8000`（容器内）
 - 打开 `http://localhost:8000`
 - 前端页面能正常加载与操作
+
+如需保留容器不自动清理：
+
+```bash
+SMOKE_KEEP_UP=1 bash scripts/smoke_control_plane.sh
+```
 
 ## 6. 切换判定
 
