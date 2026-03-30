@@ -215,6 +215,111 @@ def test_kiro_token_service_ensure_desktop_tokens_wraps_missing_credentials():
     )
 
 
+def test_kiro_token_service_ensure_desktop_tokens_bootstraps_with_mailbox_otp(monkeypatch):
+    from platforms.kiro.services.token import KiroTokenService
+    import platforms.kiro.services.token as token_module
+
+    captured = {}
+
+    class FakeMailbox:
+        def __init__(self):
+            self.wait_calls = []
+
+        def get_current_ids(self, acct):
+            captured["mail_account"] = acct
+            return {"existing"}
+
+        def wait_for_code(self, acct, keyword="", timeout=0, before_ids=None, code_pattern=""):
+            self.wait_calls.append(
+                {
+                    "email": acct.email,
+                    "keyword": keyword,
+                    "timeout": timeout,
+                    "before_ids": before_ids,
+                    "code_pattern": code_pattern,
+                }
+            )
+            return "654321"
+
+    fake_mailbox = FakeMailbox()
+
+    def fake_create_mailbox(provider="", extra=None, proxy=None):
+        captured["provider"] = provider
+        captured["extra"] = extra
+        captured["proxy"] = proxy
+        return fake_mailbox
+
+    class FakeMailboxAccount:
+        def __init__(self, email, account_id=""):
+            self.email = email
+            self.account_id = account_id
+
+    class FakeKiroRegister:
+        def __init__(self, proxy=None, tag="KIRO-SWITCH", headless=False):
+            captured["register_proxy"] = proxy
+            captured["register_tag"] = tag
+            captured["register_headless"] = headless
+            self.log = lambda msg: None
+
+        def fetch_desktop_tokens(self, email, pwd, otp_callback=None):
+            captured["email"] = email
+            captured["password"] = pwd
+            captured["otp"] = otp_callback()
+            return True, {
+                "accessToken": "",
+                "refreshToken": "desktop-refresh-token",
+                "clientId": "desktop-client-id",
+                "clientSecret": "desktop-client-secret",
+            }
+
+    monkeypatch.setattr(token_module, "create_mailbox", fake_create_mailbox)
+    monkeypatch.setattr(token_module, "MailboxAccount", FakeMailboxAccount)
+    monkeypatch.setattr(token_module, "KiroRegister", FakeKiroRegister)
+
+    service = KiroTokenService(
+        config=RegisterConfig(
+            proxy="http://proxy.example.com",
+            extra={"mail_provider": "duckmail"},
+        ),
+        log_fn=lambda msg: None,
+    )
+    account = Account(
+        platform="kiro",
+        email="user@example.com",
+        password="secret",
+        extra={"accessToken": "web-access-token"},
+    )
+
+    result = service.ensure_desktop_tokens(account)
+
+    assert result == {
+        "ok": True,
+        "data": {
+            "accessToken": "web-access-token",
+            "refreshToken": "desktop-refresh-token",
+            "clientId": "desktop-client-id",
+            "clientSecret": "desktop-client-secret",
+        },
+    }
+    assert captured["provider"] == "duckmail"
+    assert captured["extra"] == {"mail_provider": "duckmail"}
+    assert captured["proxy"] == "http://proxy.example.com"
+    assert captured["register_proxy"] == "http://proxy.example.com"
+    assert captured["register_tag"] == "KIRO-SWITCH"
+    assert captured["email"] == "user@example.com"
+    assert captured["password"] == "secret"
+    assert captured["otp"] == "654321"
+    assert fake_mailbox.wait_calls == [
+        {
+            "email": "user@example.com",
+            "keyword": "",
+            "timeout": 45,
+            "before_ids": {"existing"},
+            "code_pattern": OTP_CODE_PATTERN,
+        }
+    ]
+
+
 def test_kiro_desktop_service_switch_account_wraps_restart_result(monkeypatch):
     from platforms.kiro.services.desktop import KiroDesktopService
     import platforms.kiro.services.desktop as desktop_module
