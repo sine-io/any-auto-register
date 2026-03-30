@@ -1,4 +1,4 @@
-from core.base_platform import Account, AccountStatus, BasePlatform, RegisterConfig
+from core.base_platform import Account, AccountStatus, RegisterConfig, make_executor_from_config
 from platforms.trae.core import TraeRegister
 
 
@@ -9,17 +9,7 @@ class TraeRegistrationService:
         self.log = log_fn
 
     def _make_executor(self):
-        class _ExecutorShim(BasePlatform):
-            name = "trae-service"
-            display_name = "Trae Service"
-
-            def register(self, email: str, password: str = None) -> Account:
-                raise NotImplementedError
-
-            def check_valid(self, account: Account) -> bool:
-                raise NotImplementedError
-
-        return _ExecutorShim(self.config)._make_executor()
+        return make_executor_from_config(self.config)
 
     def register(self, email: str | None, password: str | None = None) -> Account:
         mail_acct = self.mailbox.get_email() if self.mailbox else None

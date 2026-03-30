@@ -37,6 +37,24 @@ class RegisterConfig:
     extra: dict = field(default_factory=dict)
 
 
+def make_executor_from_config(config: RegisterConfig):
+    """根据 config 创建执行器"""
+    from .executors.protocol import ProtocolExecutor
+
+    t = config.executor_type
+    if t == "protocol":
+        return ProtocolExecutor(proxy=config.proxy)
+    elif t == "headless":
+        from .executors.playwright import PlaywrightExecutor
+
+        return PlaywrightExecutor(proxy=config.proxy, headless=True)
+    elif t == "headed":
+        from .executors.playwright import PlaywrightExecutor
+
+        return PlaywrightExecutor(proxy=config.proxy, headless=False)
+    raise ValueError(f"未知执行器类型: {t}")
+
+
 class BasePlatform(ABC):
     # 子类必须定义
     name: str = ""
@@ -115,17 +133,7 @@ class BasePlatform(ABC):
 
     def _make_executor(self):
         """根据 config 创建执行器"""
-        from .executors.protocol import ProtocolExecutor
-        t = self.config.executor_type
-        if t == "protocol":
-            return ProtocolExecutor(proxy=self.config.proxy)
-        elif t == "headless":
-            from .executors.playwright import PlaywrightExecutor
-            return PlaywrightExecutor(proxy=self.config.proxy, headless=True)
-        elif t == "headed":
-            from .executors.playwright import PlaywrightExecutor
-            return PlaywrightExecutor(proxy=self.config.proxy, headless=False)
-        raise ValueError(f"未知执行器类型: {t}")
+        return make_executor_from_config(self.config)
 
     def _make_captcha(self, **kwargs):
         """根据 config 创建验证码解决器"""

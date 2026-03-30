@@ -79,6 +79,61 @@ def test_trae_registration_service_builds_otp_callback(monkeypatch):
     ]
 
 
+def test_base_platform_make_executor_delegates_to_shared_helper(monkeypatch):
+    import core.base_platform as base_platform_module
+
+    captured = {}
+
+    def fake_make_executor_from_config(config):
+        captured["config"] = config
+        return "shared-executor"
+
+    monkeypatch.setattr(base_platform_module, "make_executor_from_config", fake_make_executor_from_config)
+
+    class FakePlatform(base_platform_module.BasePlatform):
+        name = "fake"
+        display_name = "Fake"
+
+        def register(self, email: str, password: str = None):
+            raise NotImplementedError
+
+        def check_valid(self, account):
+            raise NotImplementedError
+
+    config = RegisterConfig(executor_type="protocol", proxy="http://proxy.example.com")
+    platform = FakePlatform(config)
+
+    executor = platform._make_executor()
+
+    assert executor == "shared-executor"
+    assert captured["config"] is config
+
+
+def test_trae_registration_service_make_executor_uses_shared_helper(monkeypatch):
+    from platforms.trae.services.registration import TraeRegistrationService
+    import platforms.trae.services.registration as registration_module
+
+    captured = {}
+
+    def fake_make_executor_from_config(config):
+        captured["config"] = config
+        return "shared-executor"
+
+    monkeypatch.setattr(
+        registration_module,
+        "make_executor_from_config",
+        fake_make_executor_from_config,
+    )
+
+    config = RegisterConfig(executor_type="protocol", proxy="http://proxy.example.com")
+    service = TraeRegistrationService(config=config)
+
+    executor = service._make_executor()
+
+    assert executor == "shared-executor"
+    assert captured["config"] is config
+
+
 def test_trae_platform_register_logs_email_and_delegates_to_registration_service(monkeypatch):
     from platforms.trae.plugin import TraePlatform
 
