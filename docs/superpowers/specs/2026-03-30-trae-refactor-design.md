@@ -299,6 +299,49 @@ TraePlatform.execute_action("get_cashier_url")
 - 桌面副作用逻辑不再直接散落在 action 路由中
 - `Trae` 可以作为 `Cursor` 之后的第二个参考实现
 
+## Implementation Outcome
+
+本次实现已按目标落地，当前实际状态为：
+
+- `platforms/trae/services/` 已包含：
+  - `registration.py`
+  - `account.py`
+  - `desktop.py`
+  - `billing.py`
+- `platforms/trae/plugin.py` 已收缩为薄入口，注册、账号查询、桌面切换、升级链接 action 均委托给对应 service
+- `TraeRegistrationService` 已改为通过共享 helper `make_executor_from_config(config)` 创建执行器
+- 注册前输出邮箱日志这一既有副作用已被保留
+- 桌面重启已补出独立 service 入口 `TraeDesktopService.restart_ide()`
+
+## Deviations Found During Implementation
+
+实现过程中发现两点轻微偏差，需要记录：
+
+- `TraeBillingService` 目前仍持有 `platform` 并调用 `platform._make_executor()`，执行器注入方式和 registration service 还不完全对称
+- 为保留 `TraePlatform.register()` 里“先记录邮箱”的既有行为，插件层会先做一次 mailbox lookup；`TraeRegistrationService.register()` 为了完成实际注册仍会再次取 mailbox，因此存在一次轻量重复读取
+
+这些偏差都属于小范围基础设施不对称，不影响本轮试点目标。
+
+## Cursor Pattern Assessment
+
+`Cursor` 的拆分模式复制到 `Trae` 总体是干净的。
+
+复制成功的部分：
+
+- 薄插件入口模式直接适用
+- registration / account / desktop 三类 service 边界可以原样复用
+- 契约测试与 service 测试可以直接承接试点验证方式
+
+`Trae` 相对 `Cursor` 的额外差异主要只有一层：
+
+- `billing` 能力链需要独立的 `TraeBillingService`
+
+结论：
+
+- `Cursor` pattern mostly copied cleanly to `Trae`
+- 剩余问题仅是 billing 相关的轻微注入不对称，以及为保留日志副作用带来的 mailbox lookup 重复
+- 这不构成对该模式的否定，反而说明该模式可以在存在平台特有能力链时做小幅扩展
+
 ## Non-Goals
 
 这轮不做：

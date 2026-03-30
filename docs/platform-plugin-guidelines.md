@@ -219,14 +219,39 @@
 - 先拆“编排层”和“副作用边界”是可行的
 - 契约测试 + service 测试足以支撑第一轮试点
 
-## Suitability For Trae
+## Reference Trial: Trae
 
-`Trae` 是最适合直接复用这一模式的下一个平台。
+`Trae` 已作为第二个参考实现完成试点，用来验证 `Cursor` 的拆分模式能否跨平台复制。
 
-原因：
+本次试点的实际结果是：
 
-- 与 `Cursor` 一样，既有注册协议，也有桌面切换 action
-- `plugin.py` 当前同样承担了过多编排职责
-- `switch.py` 同样属于典型桌面副作用边界
+- `platforms/trae/plugin.py`
+  - 收缩为薄插件入口
+  - 注册、账号查询、桌面切换、升级链接能力均委托给 services
+- 新增 service 边界：
+  - `TraeRegistrationService`
+  - `TraeAccountService`
+  - `TraeDesktopService`
+  - `TraeBillingService`
+- 共享执行器创建统一复用 `make_executor_from_config(config)`
+- 原有注册日志副作用保持不变
+- 桌面 IDE 重启补出了独立 service 入口 `restart_ide()`
 
-因此后续如果继续做试点复制，建议优先把 `Trae` 按 `Cursor` 的结构拆分。
+这说明：
+
+- `Cursor` 的“薄插件 + services”模式可以基本原样复制到 `Trae`
+- 当平台存在额外 billing 能力链时，可以新增独立 billing service，而不需要把它重新塞回插件入口
+- 第二个试点继续证明：先拆编排层与副作用边界，比直接重写协议层更稳妥
+
+## Trae Pilot Observations
+
+`Trae` 虽然整体复制顺利，但实现中也暴露了两点小偏差，值得记录给后续平台参考：
+
+- `TraeBillingService` 目前仍通过 `platform._make_executor()` 取执行器，基础设施注入还没有像 registration service 一样完全解耦
+- `TraePlatform.register()` 为了保留“先记录邮箱日志”的既有副作用，会先做一次 mailbox lookup；而 `TraeRegistrationService.register()` 仍会自己再取一次 mailbox，形成轻微重复
+
+结论：
+
+- `Cursor` 模式复制到 `Trae` 基本是干净的
+- 剩余问题属于轻微不对称，而不是结构性失败
+- 后续复制到其他平台时，应优先统一执行器注入方式，并避免为保留日志副作用而重复读取 mailbox
