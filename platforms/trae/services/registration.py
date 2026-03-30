@@ -1,4 +1,4 @@
-from core.base_platform import Account, AccountStatus, RegisterConfig
+from core.base_platform import Account, AccountStatus, BasePlatform, RegisterConfig
 from platforms.trae.core import TraeRegister
 
 
@@ -9,20 +9,17 @@ class TraeRegistrationService:
         self.log = log_fn
 
     def _make_executor(self):
-        executor_type = self.config.executor_type
-        if executor_type == "protocol":
-            from core.executors.protocol import ProtocolExecutor
+        class _ExecutorShim(BasePlatform):
+            name = "trae-service"
+            display_name = "Trae Service"
 
-            return ProtocolExecutor(proxy=self.config.proxy)
-        if executor_type == "headless":
-            from core.executors.playwright import PlaywrightExecutor
+            def register(self, email: str, password: str = None) -> Account:
+                raise NotImplementedError
 
-            return PlaywrightExecutor(proxy=self.config.proxy, headless=True)
-        if executor_type == "headed":
-            from core.executors.playwright import PlaywrightExecutor
+            def check_valid(self, account: Account) -> bool:
+                raise NotImplementedError
 
-            return PlaywrightExecutor(proxy=self.config.proxy, headless=False)
-        raise ValueError(f"未知执行器类型: {executor_type}")
+        return _ExecutorShim(self.config)._make_executor()
 
     def register(self, email: str | None, password: str | None = None) -> Account:
         mail_acct = self.mailbox.get_email() if self.mailbox else None
