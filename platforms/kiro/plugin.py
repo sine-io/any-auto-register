@@ -238,6 +238,8 @@ class KiroPlatform(BasePlatform):
             from platforms.kiro.account_manager_upload import upload_to_kiro_manager
 
             ok, msg = upload_to_kiro_manager(account)
-            return {"ok": ok, "data": {"message": msg}}
+            if ok:
+                return self._action_success(message=msg)
+            return self._action_error(msg)
 
         raise NotImplementedError(f"未知操作: {action_id}")

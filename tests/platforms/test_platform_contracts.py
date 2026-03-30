@@ -83,3 +83,47 @@ def test_grok_execute_action_failure_returns_standard_error(monkeypatch):
     assert result["ok"] is False
     assert isinstance(result.get("error"), str)
     assert result["error"] == "upload failed"
+
+
+def test_chatgpt_execute_action_failure_returns_standard_error(monkeypatch):
+    module = importlib.import_module("platforms.chatgpt.cpa_upload")
+    monkeypatch.setattr(module, "generate_token_json", lambda account: {"token": "data"})
+    monkeypatch.setattr(module, "upload_to_cpa", lambda token_data, api_url=None, api_key=None: (False, "upload failed"))
+    instance = ChatGPTPlatform(RegisterConfig())
+
+    result = instance.execute_action(
+        "upload_cpa",
+        Account(
+            platform="chatgpt",
+            email="user@example.com",
+            password="secret",
+            token="access-token",
+            extra={"access_token": "access-token"},
+        ),
+        {"api_url": "https://example.com", "api_key": "secret"},
+    )
+
+    assert result["ok"] is False
+    assert isinstance(result.get("error"), str)
+    assert result["error"] == "upload failed"
+
+
+def test_kiro_execute_action_failure_returns_standard_error(monkeypatch):
+    module = importlib.import_module("platforms.kiro.account_manager_upload")
+    monkeypatch.setattr(module, "upload_to_kiro_manager", lambda account: (False, "manager upload failed"))
+    instance = KiroPlatform(RegisterConfig())
+
+    result = instance.execute_action(
+        "upload_kiro_manager",
+        Account(
+            platform="kiro",
+            email="user@example.com",
+            password="secret",
+            extra={"accessToken": "token"},
+        ),
+        {},
+    )
+
+    assert result["ok"] is False
+    assert isinstance(result.get("error"), str)
+    assert result["error"] == "manager upload failed"

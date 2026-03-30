@@ -173,9 +173,11 @@ class ChatGPTPlatform(BasePlatform):
             manager = TokenRefreshManager(proxy_url=proxy)
             result = manager.refresh_account(a)
             if result.success:
-                return {"ok": True, "data": {"access_token": result.access_token,
-                        "refresh_token": result.refresh_token}}
-            return {"ok": False, "error": result.error_message}
+                return self._action_success({
+                    "access_token": result.access_token,
+                    "refresh_token": result.refresh_token,
+                })
+            return self._action_error(result.error_message)
 
         elif action_id == "payment_link":
             from platforms.chatgpt.payment import generate_plus_link, generate_team_link
@@ -185,19 +187,25 @@ class ChatGPTPlatform(BasePlatform):
                 url = generate_plus_link(a, proxy=proxy, country=country)
             else:
                 url = generate_team_link(a, proxy=proxy, country=country)
-            return {"ok": bool(url), "data": {"url": url}}
+            if url:
+                return self._action_success({"url": url})
+            return self._action_error("生成支付链接失败")
 
         elif action_id == "upload_cpa":
             from platforms.chatgpt.cpa_upload import upload_to_cpa, generate_token_json
             token_data = generate_token_json(a)
             ok, msg = upload_to_cpa(token_data, api_url=params.get("api_url"),
                                     api_key=params.get("api_key"))
-            return {"ok": ok, "data": msg}
+            if ok:
+                return self._action_success(message=msg)
+            return self._action_error(msg)
 
         elif action_id == "upload_tm":
             from platforms.chatgpt.cpa_upload import upload_to_team_manager
             ok, msg = upload_to_team_manager(a, api_url=params.get("api_url"),
                                              api_key=params.get("api_key"))
-            return {"ok": ok, "data": msg}
+            if ok:
+                return self._action_success(message=msg)
+            return self._action_error(msg)
 
         raise NotImplementedError(f"未知操作: {action_id}")
