@@ -84,12 +84,6 @@ class KiroTokenService:
                     ),
                 }
 
-        if refresh_token and client_id and client_secret:
-            ok, result = refresh_kiro_token(refresh_token, client_id, client_secret)
-            if ok:
-                access_token = result["accessToken"]
-                refresh_token = result.get("refreshToken", refresh_token)
-
         return {
             "ok": True,
             "data": {

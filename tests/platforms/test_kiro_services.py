@@ -219,7 +219,7 @@ def test_kiro_token_service_ensure_desktop_tokens_bootstraps_with_mailbox_otp(mo
     from platforms.kiro.services.token import KiroTokenService
     import platforms.kiro.services.token as token_module
 
-    captured = {}
+    captured = {"refresh_calls": 0}
 
     class FakeMailbox:
         def __init__(self):
@@ -276,6 +276,15 @@ def test_kiro_token_service_ensure_desktop_tokens_bootstraps_with_mailbox_otp(mo
     monkeypatch.setattr(token_module, "MailboxAccount", FakeMailboxAccount)
     monkeypatch.setattr(token_module, "KiroRegister", FakeKiroRegister)
 
+    def fake_refresh_kiro_token(refresh_token, client_id, client_secret):
+        captured["refresh_calls"] += 1
+        return True, {
+            "accessToken": "unexpected-refreshed-access-token",
+            "refreshToken": "unexpected-refreshed-refresh-token",
+        }
+
+    monkeypatch.setattr(token_module, "refresh_kiro_token", fake_refresh_kiro_token)
+
     service = KiroTokenService(
         config=RegisterConfig(
             proxy="http://proxy.example.com",
@@ -309,6 +318,7 @@ def test_kiro_token_service_ensure_desktop_tokens_bootstraps_with_mailbox_otp(mo
     assert captured["email"] == "user@example.com"
     assert captured["password"] == "secret"
     assert captured["otp"] == "654321"
+    assert captured["refresh_calls"] == 0
     assert fake_mailbox.wait_calls == [
         {
             "email": "user@example.com",
