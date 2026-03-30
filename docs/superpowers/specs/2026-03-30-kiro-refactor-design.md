@@ -308,3 +308,42 @@ KiroPlatform.execute_action("upload_kiro_manager")
 - 深拆 `platforms/kiro/switch.py`
 - 改动 Go worker 协议
 - 改动前端
+
+## Implementation Outcome (2026-03-31)
+
+实际落地与设计目标一致：
+
+- 已新增 `platforms/kiro/services/registration.py`
+- 已新增 `platforms/kiro/services/token.py`
+- 已新增 `platforms/kiro/services/desktop.py`
+- 已新增 `platforms/kiro/services/manager_sync.py`
+- `platforms/kiro/plugin.py` 已收缩为薄入口，注册 / token / desktop / manager sync 全部改为委托 service
+- 注册阶段保留单次 mailbox 解析，并把同一个 mailbox account 传给 OTP 流程；该兼容行为已有专项测试覆盖
+- `platforms/kiro/services/__init__.py` 增加 lazy import 以消除 service 包带来的 import-time coupling
+- `tests/platforms/test_kiro_services.py` 已覆盖 lazy import、mailbox reuse、token/bootstrap、desktop、manager sync 等关键边界
+
+## Deviations Found During Implementation
+
+实现过程中确认了几处与初始设计相比值得记录的偏差：
+
+- `plugin.py` 仍保留少量 mailbox 解析与日志职责；这是为了保留既有“邮箱:”日志与 single-use mailbox 行为，而不是 service 划分失败
+- `Kiro` 相比 `Cursor / Trae` 多出一层显式 `KiroTokenService`；原因是 `switch_account` 前置链包含 desktop token bootstrap、refresh 前置凭据判定与错误包装，复杂度更高
+- `manager_sync` 目前仍手写简单 action envelope，没有进一步抽象到共享 helper
+- 为避免新的导入耦合，service package 采用 lazy import；这项调整属于实现期补充，不是原设计里单列的结构目标
+
+## Pilot Acceptance Notes
+
+验收基线：
+
+- `pytest tests/platforms/test_kiro_services.py tests/platforms/test_platform_contracts.py tests/test_risk_hardening.py -q`
+- `cd go-control-plane && go test ./...`
+- `cd frontend && npm run build`
+
+截至 2026-03-31，上述命令均已通过。
+
+结论：
+
+- `Cursor / Trae` 的“薄插件 + services”模式复制到 `Kiro` 整体是干净的
+- 复制并非完全原样：`Kiro` 需要额外 token service 来承接更长的 token / desktop 链路
+- 当前剩余问题均为轻微 follow-up，不影响把 `Kiro` 作为第三个参考实现
+

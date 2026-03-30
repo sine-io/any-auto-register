@@ -50,16 +50,21 @@
 
 ## Current Priority Targets
 
-这一轮优先治理：
+当前已完成参考实现：
 
 - `Cursor`
 - `Trae`
+- `Kiro`
+
+下一轮优先治理建议：
+
 - `Grok`
+- `ChatGPT`
 
 原因：
 
-- 它们在桌面切换、升级链接、外部上传这类动作上最常被直接调用
-- 也是最容易出现返回形状不一致的平台
+- `Grok` 的浏览器自动化、验证码与平台细节复杂度最高
+- `ChatGPT` 能力面最广，插件入口仍承担较多 capability routing
 
 ## Future Cleanup Candidates
 
@@ -178,16 +183,14 @@
 
 ## Suggested Refactor Order
 
-建议后续按这条顺序推进：
+剩余平台建议按这条顺序推进：
 
-1. `Cursor / Trae`
-   - 因为桌面切换类 action 最直接影响用户操作体验
-2. `Grok`
-   - 因为浏览器自动化复杂度最高，且平台特定细节多
-3. `Kiro`
-   - 因为 token / desktop / manager sync 三段逻辑耦合最深
-4. `ChatGPT`
-   - 功能多，但边界已经比前几者略清楚
+1. `Grok`
+   - 浏览器自动化复杂度最高，且平台特定细节多
+2. `ChatGPT`
+   - 功能面最广，插件入口仍承担较多 capability routing
+3. `Kiro` 深拆（如后续仍有收益）
+   - 当前已完成 service 层治理，但 `core.py / switch.py` 仍可作为后续深拆候选
 
 ## Refactor Success Criteria
 
@@ -255,3 +258,42 @@
 - `Cursor` 模式复制到 `Trae` 基本是干净的
 - 剩余问题属于轻微不对称，而不是结构性失败
 - 后续复制到其他平台时，应优先统一执行器注入方式，并避免为保留日志副作用而重复读取 mailbox
+
+## Reference Trial: Kiro
+
+`Kiro` 已作为第三个参考实现完成试点，用来验证 `Cursor / Trae` 的“薄插件 + services”模式能否承接更长的 token / desktop / external sync 链路。
+
+本次试点的实际结果是：
+
+- `platforms/kiro/plugin.py`
+  - 收缩为薄插件入口
+  - 注册、token、桌面切换、Kiro Manager 同步均委托给 services
+- 新增 service 边界：
+  - `KiroRegistrationService`
+  - `KiroTokenService`
+  - `KiroDesktopService`
+  - `KiroManagerSyncService`
+- 注册阶段的 mailbox lookup 保持单次解析，并把同一个 mailbox account 继续传给 OTP 流程
+- `platforms/kiro/services/__init__.py`
+  - 使用 lazy import 避免插件导入阶段与 service 包产生新的 import-time coupling
+
+这说明：
+
+- `Cursor / Trae` 的模式复制到 `Kiro` 整体是干净的
+- 但 `Kiro` 的桌面切换链路更复杂，需要单独的 token service 来吸收 desktop bootstrap / refresh 前置逻辑
+- 第三个试点继续证明：优先拆编排层和副作用边界，仍比直接重写协议层更稳妥
+
+## Kiro Pilot Observations
+
+`Kiro` 的复制虽然总体顺利，但实现中也暴露了几处值得记录的小偏差：
+
+- `KiroManagerSyncService` 目前仍手写简单的 action envelope，而不是直接复用 `BasePlatform` 辅助能力
+- `KiroPlatform.register()` 仍保留一小段 mailbox 解析与日志职责，以保持旧版“邮箱:”日志和单次 mailbox 解析行为不变
+- `Kiro` 的 token / bootstrap / desktop 分层明显比 `Cursor / Trae` 更复杂，因此把 token bootstrap 独立成 service 是必要扩展，而不是模式失效
+
+结论：
+
+- `Cursor / Trae` 模式复制到 `Kiro` 足够干净，可以把它视为第三个参考实现
+- 剩余问题属于兼容性保留和轻微基础设施不对称
+- 当前没有发现阻止后续复制到其他平台的结构性问题
+
