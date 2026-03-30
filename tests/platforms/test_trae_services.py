@@ -79,24 +79,16 @@ def test_trae_registration_service_builds_otp_callback(monkeypatch):
     ]
 
 
-def test_trae_account_service_check_valid_uses_token(monkeypatch):
+def test_trae_account_service_check_valid_uses_token():
     from platforms.trae.services.account import TraeAccountService
 
-    calls = {}
-
-    class FakeResponse:
-        status_code = 200
-
-    def fake_fetch(token: str):
-        calls["token"] = token
-        return FakeResponse()
-
     service = TraeAccountService(RegisterConfig())
-    monkeypatch.setattr(service, "_fetch_user_token", fake_fetch)
 
     account = Account(platform="trae", email="user@example.com", password="secret", token="trae-token")
     assert service.check_valid(account) is True
-    assert calls["token"] == "trae-token"
+
+    account_without_token = Account(platform="trae", email="user@example.com", password="secret", token="")
+    assert service.check_valid(account_without_token) is False
 
 
 def test_trae_account_service_get_user_info_wraps_failure(monkeypatch):
