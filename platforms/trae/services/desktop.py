@@ -2,6 +2,12 @@ from platforms.trae.switch import restart_trae_ide, switch_trae_account
 
 
 class TraeDesktopService:
+    def restart_ide(self) -> dict:
+        ok, msg = restart_trae_ide()
+        if not ok:
+            return {"ok": False, "error": msg}
+        return {"ok": True, "data": {"message": msg}}
+
     def switch_account(self, account) -> dict:
         token = account.token
         if not token:

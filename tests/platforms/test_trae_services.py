@@ -141,6 +141,22 @@ def test_trae_desktop_service_switch_account_wraps_restart_result(monkeypatch):
     assert result["data"]["message"] == "切换成功，请重启 Trae IDE 使新账号生效。Trae IDE 已重启"
 
 
+def test_trae_desktop_service_restart_ide_wraps_restart_result(monkeypatch):
+    from platforms.trae.services.desktop import TraeDesktopService
+    import platforms.trae.services.desktop as desktop_module
+
+    monkeypatch.setattr(desktop_module, "restart_trae_ide", lambda: (True, "Trae IDE 已重启"))
+
+    service = TraeDesktopService()
+
+    result = service.restart_ide()
+
+    assert result == {
+        "ok": True,
+        "data": {"message": "Trae IDE 已重启"},
+    }
+
+
 def test_trae_billing_service_falls_back_to_account_token(monkeypatch):
     from platforms.trae.services.billing import TraeBillingService
     import platforms.trae.services.billing as billing_module
