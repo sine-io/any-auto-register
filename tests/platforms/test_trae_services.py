@@ -99,17 +99,23 @@ def test_trae_account_service_check_valid_uses_token(monkeypatch):
     assert calls["token"] == "trae-token"
 
 
-def test_trae_account_service_get_user_info_wraps_failure():
+def test_trae_account_service_get_user_info_wraps_failure(monkeypatch):
     from platforms.trae.services.account import TraeAccountService
 
     service = TraeAccountService(RegisterConfig())
-    account = Account(platform="trae", email="user@example.com", password="secret", token="")
+
+    def fake_fetch(token: str):
+        raise RuntimeError(f"upstream failed for {token}")
+
+    monkeypatch.setattr(service, "_fetch_user_token", fake_fetch)
+
+    account = Account(platform="trae", email="user@example.com", password="secret", token="trae-token")
 
     result = service.get_user_info(account)
 
     assert result["ok"] is False
     assert isinstance(result.get("error"), str)
-    assert result["error"] == "账号缺少 token"
+    assert result["error"] == "获取用户信息失败"
 
 
 def test_trae_desktop_service_switch_account_wraps_restart_result(monkeypatch):
@@ -184,5 +190,9 @@ def test_trae_billing_service_falls_back_to_account_token(monkeypatch):
     assert result["ok"] is True
     assert result["data"]["cashier_url"] == "https://cashier.example.com"
     assert result["data"]["message"] == "请在浏览器中打开升级链接完成 Pro 订阅"
+    assert created["make_executor_called"] is True
+    assert created["entered"] is True
+    assert created["exited"] is True
+    assert created["step4_called"] is True
+    assert created["step5_called"] is True
     assert created["create_order_token"] == "account-token"
-
