@@ -5,6 +5,39 @@ import pytest
 OTP_CODE_PATTERN = r'(?is)(?:verification\s+code|验证码)[^0-9]{0,20}(\d{6})'
 
 
+def test_kiro_plugin_import_does_not_eagerly_load_service_modules():
+    import importlib
+    import sys
+
+    module_names = [
+        "platforms.kiro.plugin",
+        "platforms.kiro.services",
+        "platforms.kiro.services.registration",
+        "platforms.kiro.services.token",
+        "platforms.kiro.services.desktop",
+        "platforms.kiro.services.manager_sync",
+    ]
+    saved_modules = {name: sys.modules.get(name) for name in module_names}
+
+    for name in module_names:
+        sys.modules.pop(name, None)
+
+    try:
+        importlib.import_module("platforms.kiro.plugin")
+
+        assert "platforms.kiro.services" not in sys.modules
+        assert "platforms.kiro.services.registration" not in sys.modules
+        assert "platforms.kiro.services.token" not in sys.modules
+        assert "platforms.kiro.services.desktop" not in sys.modules
+        assert "platforms.kiro.services.manager_sync" not in sys.modules
+    finally:
+        for name in module_names:
+            sys.modules.pop(name, None)
+        for name, module in saved_modules.items():
+            if module is not None:
+                sys.modules[name] = module
+
+
 def test_kiro_registration_service_builds_otp_callback(monkeypatch):
     from platforms.kiro.services.registration import KiroRegistrationService
     import platforms.kiro.services.registration as registration_module

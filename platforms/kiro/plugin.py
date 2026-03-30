@@ -2,12 +2,6 @@
 from core.base_platform import BasePlatform, Account, RegisterConfig
 from core.base_mailbox import BaseMailbox
 from core.registry import register
-from platforms.kiro.services import (
-    KiroDesktopService,
-    KiroManagerSyncService,
-    KiroRegistrationService,
-    KiroTokenService,
-)
 
 
 @register
@@ -20,27 +14,35 @@ class KiroPlatform(BasePlatform):
         super().__init__(config)
         self.mailbox = mailbox
 
-    def _registration_service(self) -> KiroRegistrationService:
+    def _registration_service(self):
+        from platforms.kiro.services.registration import KiroRegistrationService
+
         return KiroRegistrationService(
             config=self.config,
             mailbox=self.mailbox,
             log_fn=getattr(self, "_log_fn", print),
         )
 
-    def _token_service(self) -> KiroTokenService:
+    def _token_service(self):
+        from platforms.kiro.services.token import KiroTokenService
+
         return KiroTokenService(
             config=self.config,
             log_fn=getattr(self, "_log_fn", print),
         )
 
-    def _desktop_service(self) -> KiroDesktopService:
+    def _desktop_service(self):
+        from platforms.kiro.services.desktop import KiroDesktopService
+
         return KiroDesktopService(
             config=self.config,
             token_service=self._token_service(),
             log_fn=getattr(self, "_log_fn", print),
         )
 
-    def _manager_sync_service(self) -> KiroManagerSyncService:
+    def _manager_sync_service(self):
+        from platforms.kiro.services.manager_sync import KiroManagerSyncService
+
         return KiroManagerSyncService()
 
     def register(self, email: str, password: str = None) -> Account:
