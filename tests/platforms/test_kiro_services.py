@@ -75,6 +75,39 @@ def test_kiro_registration_service_factory_does_not_eagerly_load_unrelated_servi
                 sys.modules[name] = module
 
 
+def test_kiro_token_service_factory_does_not_eagerly_load_core_module():
+    import importlib
+    import sys
+
+    module_names = [
+        "platforms.kiro.plugin",
+        "platforms.kiro.services",
+        "platforms.kiro.services.token",
+        "platforms.kiro.core",
+    ]
+    saved_modules = {name: sys.modules.get(name) for name in module_names}
+
+    for name in module_names:
+        sys.modules.pop(name, None)
+
+    try:
+        plugin_module = importlib.import_module("platforms.kiro.plugin")
+        platform = plugin_module.KiroPlatform(RegisterConfig())
+
+        service = platform._token_service()
+
+        assert service.__class__.__name__ == "KiroTokenService"
+        assert "platforms.kiro.services" in sys.modules
+        assert "platforms.kiro.services.token" in sys.modules
+        assert "platforms.kiro.core" not in sys.modules
+    finally:
+        for name in module_names:
+            sys.modules.pop(name, None)
+        for name, module in saved_modules.items():
+            if module is not None:
+                sys.modules[name] = module
+
+
 def test_kiro_registration_service_builds_otp_callback(monkeypatch):
     from platforms.kiro.services.registration import KiroRegistrationService
     import platforms.kiro.services.registration as registration_module
@@ -532,7 +565,7 @@ def test_kiro_token_service_ensure_desktop_tokens_bootstraps_with_mailbox_otp(mo
 
     monkeypatch.setattr(token_module, "create_mailbox", fake_create_mailbox)
     monkeypatch.setattr(token_module, "MailboxAccount", FakeMailboxAccount)
-    monkeypatch.setattr(token_module, "KiroRegister", FakeKiroRegister)
+    monkeypatch.setattr(token_module, "_load_kiro_register", lambda: FakeKiroRegister)
 
     def fake_refresh_kiro_token(refresh_token, client_id, client_secret):
         captured["refresh_calls"] += 1
@@ -599,7 +632,7 @@ def test_kiro_token_service_ensure_desktop_tokens_wraps_bootstrap_failure(monkey
         def fetch_desktop_tokens(self, email, pwd, otp_callback=None):
             return False, {"error": "desktop auth failed"}
 
-    monkeypatch.setattr(token_module, "KiroRegister", FakeKiroRegister)
+    monkeypatch.setattr(token_module, "_load_kiro_register", lambda: FakeKiroRegister)
 
     service = KiroTokenService(config=RegisterConfig(), log_fn=lambda msg: None)
     account = Account(

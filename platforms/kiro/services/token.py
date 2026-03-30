@@ -2,11 +2,16 @@ from __future__ import annotations
 
 from core.base_mailbox import MailboxAccount, create_mailbox
 from core.base_platform import RegisterConfig
-from platforms.kiro.core import KiroRegister
 from platforms.kiro.switch import refresh_kiro_token
 
 
 OTP_CODE_PATTERN = r'(?is)(?:verification\s+code|验证码)[^0-9]{0,20}(\d{6})'
+
+
+def _load_kiro_register():
+    from platforms.kiro.core import KiroRegister
+
+    return KiroRegister
 
 
 class KiroTokenService:
@@ -95,6 +100,7 @@ class KiroTokenService:
         }
 
     def _bootstrap_desktop_tokens(self, account) -> tuple[bool, dict]:
+        KiroRegister = _load_kiro_register()
         reg = KiroRegister(proxy=self.config.proxy, tag="KIRO-SWITCH")
         reg.log = self.log
         otp_callback = self._build_desktop_otp_callback(account, reg)
