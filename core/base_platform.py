@@ -92,6 +92,23 @@ class BasePlatform(ABC):
         """
         raise NotImplementedError(f"平台 {self.name} 不支持操作: {action_id}")
 
+    @staticmethod
+    def _action_success(data=None, message: str = "") -> dict:
+        if data is None:
+            payload = {}
+        elif isinstance(data, dict):
+            payload = dict(data)
+        else:
+            payload = {"value": data}
+
+        if message and "message" not in payload:
+            payload["message"] = message
+        return {"ok": True, "data": payload}
+
+    @staticmethod
+    def _action_error(error: object) -> dict:
+        return {"ok": False, "error": str(error)}
+
     def get_quota(self, account: Account) -> dict:
         """查询账号配额（可选实现）"""
         return {}

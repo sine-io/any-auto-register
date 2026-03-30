@@ -91,5 +91,7 @@ class GrokPlatform(BasePlatform):
             from platforms.grok.grok2api_upload import upload_to_grok2api
 
             ok, msg = upload_to_grok2api(account)
-            return {"ok": ok, "data": {"message": msg}}
+            if ok:
+                return self._action_success(message=msg)
+            return self._action_error(msg)
         raise NotImplementedError(f"未知操作: {action_id}")

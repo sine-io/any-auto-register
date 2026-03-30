@@ -74,30 +74,25 @@ class CursorPlatform(BasePlatform):
             
             token = account.token
             if not token:
-                return {"ok": False, "error": "账号缺少 token"}
+                return self._action_error("账号缺少 token")
             
             ok, msg = switch_cursor_account(token)
             if not ok:
-                return {"ok": False, "error": msg}
+                return self._action_error(msg)
             
             restart_ok, restart_msg = restart_cursor_ide()
-            return {
-                "ok": True,
-                "data": {
-                    "message": f"{msg}。{restart_msg}" if restart_ok else msg,
-                }
-            }
+            return self._action_success(message=f"{msg}。{restart_msg}" if restart_ok else msg)
         
         elif action_id == "get_user_info":
             from platforms.cursor.switch import get_cursor_user_info
             
             token = account.token
             if not token:
-                return {"ok": False, "error": "账号缺少 token"}
+                return self._action_error("账号缺少 token")
             
             user_info = get_cursor_user_info(token)
             if user_info:
-                return {"ok": True, "data": user_info}
-            return {"ok": False, "error": "获取用户信息失败"}
+                return self._action_success(user_info)
+            return self._action_error("获取用户信息失败")
         
         raise NotImplementedError(f"未知操作: {action_id}")
