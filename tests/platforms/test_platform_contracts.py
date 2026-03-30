@@ -109,9 +109,13 @@ def test_chatgpt_execute_action_failure_returns_standard_error(monkeypatch):
 
 
 def test_kiro_execute_action_failure_returns_standard_error(monkeypatch):
-    module = importlib.import_module("platforms.kiro.account_manager_upload")
-    monkeypatch.setattr(module, "upload_to_kiro_manager", lambda account: (False, "manager upload failed"))
     instance = KiroPlatform(RegisterConfig())
+
+    class FakeManagerSyncService:
+        def upload(self, account):
+            return {"ok": False, "error": "manager upload failed"}
+
+    monkeypatch.setattr(KiroPlatform, "_manager_sync_service", lambda self: FakeManagerSyncService())
 
     result = instance.execute_action(
         "upload_kiro_manager",

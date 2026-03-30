@@ -149,6 +149,43 @@ def test_kiro_registration_service_raises_runtime_error_on_failure(monkeypatch):
         service.register(email="user@example.com", password="secret")
 
 
+def test_kiro_platform_register_logs_mailbox_email_and_delegates_to_registration_service(monkeypatch):
+    from platforms.kiro.plugin import KiroPlatform
+
+    logged = []
+    captured = {}
+    expected = Account(
+        platform="kiro",
+        email="delegated@example.com",
+        password="secret",
+        extra={"accessToken": "access-token"},
+    )
+
+    class FakeMailboxAccount:
+        email = "mailbox@example.com"
+
+    class FakeMailbox:
+        def get_email(self):
+            return FakeMailboxAccount()
+
+    class FakeRegistrationService:
+        def register(self, email=None, password=None):
+            captured["email"] = email
+            captured["password"] = password
+            return expected
+
+    monkeypatch.setattr(KiroPlatform, "_registration_service", lambda self: FakeRegistrationService())
+
+    instance = KiroPlatform(RegisterConfig(), mailbox=FakeMailbox())
+    instance._log_fn = logged.append
+
+    result = instance.register("delegated@example.com", "secret")
+
+    assert result is expected
+    assert captured == {"email": "delegated@example.com", "password": "secret"}
+    assert logged == ["邮箱: mailbox@example.com"]
+
+
 def test_kiro_token_service_check_valid_uses_refresh_credentials(monkeypatch):
     from platforms.kiro.services.token import KiroTokenService
     import platforms.kiro.services.token as token_module
@@ -221,6 +258,30 @@ def test_kiro_token_service_refresh_token_wraps_success(monkeypatch):
             "refreshToken": "fresh-refresh-token",
         },
     }
+
+
+def test_kiro_platform_check_valid_delegates_to_token_service(monkeypatch):
+    from platforms.kiro.plugin import KiroPlatform
+
+    captured = {}
+    account = Account(
+        platform="kiro",
+        email="user@example.com",
+        password="secret",
+        extra={"refreshToken": "refresh-token"},
+    )
+
+    class FakeTokenService:
+        def check_valid(self, delegated_account):
+            captured["account"] = delegated_account
+            return True
+
+    monkeypatch.setattr(KiroPlatform, "_token_service", lambda self: FakeTokenService())
+
+    instance = KiroPlatform(RegisterConfig())
+
+    assert instance.check_valid(account) is True
+    assert captured == {"account": account}
 
 
 def test_kiro_token_service_ensure_desktop_tokens_wraps_missing_credentials():
@@ -651,3 +712,81 @@ def test_kiro_manager_sync_service_upload_wraps_failure(monkeypatch):
     result = service.upload(account)
 
     assert result == {"ok": False, "error": "写入失败: permission denied"}
+
+
+def test_kiro_platform_execute_action_delegates_to_services(monkeypatch):
+    from platforms.kiro.plugin import KiroPlatform
+
+    account = Account(
+        platform="kiro",
+        email="user@example.com",
+        password="secret",
+        extra={"accessToken": "access-token"},
+    )
+    calls = []
+
+    class FakeTokenService:
+        def refresh_token(self, delegated_account):
+            calls.append(("refresh_token", delegated_account))
+            return {
+                "ok": True,
+                "data": {
+                    "access_token": "fresh-access-token",
+                    "accessToken": "fresh-access-token",
+                    "refreshToken": "fresh-refresh-token",
+                },
+            }
+
+    class FakeDesktopService:
+        def switch_account(self, delegated_account):
+            calls.append(("switch_account", delegated_account))
+            return {
+                "ok": True,
+                "data": {
+                    "accessToken": "desktop-access-token",
+                    "refreshToken": "desktop-refresh-token",
+                    "clientId": "desktop-client-id",
+                    "clientSecret": "desktop-client-secret",
+                    "message": "桌面切换成功",
+                },
+            }
+
+    class FakeManagerSyncService:
+        def upload(self, delegated_account):
+            calls.append(("upload_kiro_manager", delegated_account))
+            return {"ok": True, "data": {"message": "导入成功"}}
+
+    monkeypatch.setattr(KiroPlatform, "_token_service", lambda self: FakeTokenService())
+    monkeypatch.setattr(KiroPlatform, "_desktop_service", lambda self: FakeDesktopService())
+    monkeypatch.setattr(KiroPlatform, "_manager_sync_service", lambda self: FakeManagerSyncService())
+
+    instance = KiroPlatform(RegisterConfig())
+
+    refresh_result = instance.execute_action("refresh_token", account, {})
+    switch_result = instance.execute_action("switch_account", account, {})
+    upload_result = instance.execute_action("upload_kiro_manager", account, {})
+
+    assert refresh_result == {
+        "ok": True,
+        "data": {
+            "access_token": "fresh-access-token",
+            "accessToken": "fresh-access-token",
+            "refreshToken": "fresh-refresh-token",
+        },
+    }
+    assert switch_result == {
+        "ok": True,
+        "data": {
+            "accessToken": "desktop-access-token",
+            "refreshToken": "desktop-refresh-token",
+            "clientId": "desktop-client-id",
+            "clientSecret": "desktop-client-secret",
+            "message": "桌面切换成功",
+        },
+    }
+    assert upload_result == {"ok": True, "data": {"message": "导入成功"}}
+    assert calls == [
+        ("refresh_token", account),
+        ("switch_account", account),
+        ("upload_kiro_manager", account),
+    ]
