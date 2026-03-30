@@ -169,9 +169,10 @@ def test_kiro_platform_register_logs_mailbox_email_and_delegates_to_registration
             return FakeMailboxAccount()
 
     class FakeRegistrationService:
-        def register(self, email=None, password=None):
+        def register(self, email=None, password=None, mailbox_account=None):
             captured["email"] = email
             captured["password"] = password
+            captured["mailbox_account"] = mailbox_account
             return expected
 
     monkeypatch.setattr(KiroPlatform, "_registration_service", lambda self: FakeRegistrationService())
@@ -182,8 +183,106 @@ def test_kiro_platform_register_logs_mailbox_email_and_delegates_to_registration
     result = instance.register("delegated@example.com", "secret")
 
     assert result is expected
-    assert captured == {"email": "delegated@example.com", "password": "secret"}
+    assert captured["email"] == "delegated@example.com"
+    assert captured["password"] == "secret"
+    assert captured["mailbox_account"].email == "mailbox@example.com"
     assert logged == ["邮箱: mailbox@example.com"]
+
+
+def test_kiro_platform_register_reuses_single_mailbox_account_for_logging_and_otp(monkeypatch):
+    from platforms.kiro.plugin import KiroPlatform
+    import platforms.kiro.services.registration as registration_module
+
+    logged = []
+    captured = {}
+
+    class FakeMailboxAccount:
+        def __init__(self, email):
+            self.email = email
+
+    first_account = FakeMailboxAccount("first@example.com")
+    second_account = FakeMailboxAccount("second@example.com")
+
+    class FakeMailbox:
+        def __init__(self):
+            self.get_email_calls = 0
+            self.wait_calls = []
+
+        def get_email(self):
+            self.get_email_calls += 1
+            return first_account if self.get_email_calls == 1 else second_account
+
+        def get_current_ids(self, acct):
+            captured["get_current_ids_email"] = acct.email
+            return {"existing"}
+
+        def wait_for_code(self, acct, keyword="", timeout=0, before_ids=None, code_pattern=""):
+            self.wait_calls.append(
+                {
+                    "email": acct.email,
+                    "keyword": keyword,
+                    "timeout": timeout,
+                    "before_ids": before_ids,
+                    "code_pattern": code_pattern,
+                }
+            )
+            return "654321"
+
+    class FakeKiroRegister:
+        def __init__(self, proxy=None, tag="KIRO", headless=False):
+            self.log = lambda msg: None
+
+        def register(
+            self,
+            email=None,
+            pwd=None,
+            name="Kiro User",
+            mail_token=None,
+            otp_timeout=120,
+            otp_callback=None,
+        ):
+            captured["register_email"] = email
+            captured["otp"] = otp_callback()
+            return True, {
+                "email": email,
+                "password": pwd or "generated-secret",
+                "name": name,
+                "accessToken": "access-token",
+                "sessionToken": "session-token",
+                "clientId": "client-id",
+                "clientSecret": "client-secret",
+                "clientIdHash": "client-id-hash",
+                "refreshToken": "refresh-token",
+                "webAccessToken": "web-access-token",
+                "region": "us-east-1",
+            }
+
+    fake_mailbox = FakeMailbox()
+    monkeypatch.setattr(registration_module, "KiroRegister", FakeKiroRegister)
+
+    instance = KiroPlatform(
+        RegisterConfig(extra={"otp_timeout": 45}),
+        mailbox=fake_mailbox,
+    )
+    instance._log_fn = logged.append
+
+    account = instance.register(None, "secret")
+
+    assert account.email == "first@example.com"
+    assert fake_mailbox.get_email_calls == 1
+    assert logged[0] == "邮箱: first@example.com"
+    assert captured["register_email"] == "first@example.com"
+    assert captured["get_current_ids_email"] == "first@example.com"
+    assert captured["otp"] == "654321"
+    assert fake_mailbox.wait_calls == [
+        {
+            "email": "first@example.com",
+            "keyword": "builder id",
+            "timeout": 45,
+            "before_ids": {"existing"},
+            "code_pattern": OTP_CODE_PATTERN,
+        }
+    ]
 
 
 def test_kiro_token_service_check_valid_uses_refresh_credentials(monkeypatch):

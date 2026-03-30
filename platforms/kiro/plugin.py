@@ -45,10 +45,15 @@ class KiroPlatform(BasePlatform):
 
     def register(self, email: str, password: str = None) -> Account:
         log_fn = getattr(self, "_log_fn", print)
+        mailbox_account = None
         if self.mailbox:
-            mail_acct = self.mailbox.get_email()
-            log_fn(f"邮箱: {mail_acct.email}")
-        return self._registration_service().register(email=email, password=password)
+            mailbox_account = self.mailbox.get_email()
+            log_fn(f"邮箱: {mailbox_account.email}")
+        return self._registration_service().register(
+            email=email,
+            password=password,
+            mailbox_account=mailbox_account,
+        )
 
     def check_valid(self, account: Account) -> bool:
         """通过 refreshToken 检测账号是否有效"""

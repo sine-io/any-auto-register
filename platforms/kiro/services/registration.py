@@ -13,7 +13,7 @@ class KiroRegistrationService:
         self.mailbox = mailbox
         self.log = log_fn
 
-    def register(self, email: str | None, password: str | None = None) -> Account:
+    def register(self, email: str | None, password: str | None = None, mailbox_account=None) -> Account:
         proxy = self.config.proxy
         mail_token = self.config.extra.get("laoudo_account_id", "")
         otp_timeout = int(self.config.extra.get("otp_timeout", 120))
@@ -21,9 +21,9 @@ class KiroRegistrationService:
         reg = KiroRegister(proxy=proxy, tag="KIRO")
         reg.log = lambda msg: self.log(msg)
 
-        mail_acct = self.mailbox.get_email() if self.mailbox else None
+        mail_acct = mailbox_account or (self.mailbox.get_email() if self.mailbox else None)
         current_email = email or (mail_acct.email if mail_acct else None)
-        before_ids = self.mailbox.get_current_ids(mail_acct) if mail_acct else set()
+        before_ids = self.mailbox.get_current_ids(mail_acct) if (self.mailbox and mail_acct) else set()
 
         def otp_cb():
             self.log("等待验证码...")
@@ -44,7 +44,7 @@ class KiroRegistrationService:
             name=self.config.extra.get("name", "Kiro User"),
             mail_token=mail_token or None,
             otp_timeout=otp_timeout,
-            otp_callback=otp_cb if self.mailbox else None,
+            otp_callback=otp_cb if (self.mailbox and mail_acct) else None,
         )
         if not ok:
             raise RuntimeError(f"Kiro 注册失败: {info.get('error')}")
