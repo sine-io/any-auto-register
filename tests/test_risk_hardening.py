@@ -483,9 +483,9 @@ def test_smoke_script_disables_camoufox_prefetch_by_default():
     assert 'GATEWAY_PORT="${GATEWAY_PORT:-18080}"' in script
     assert 'PYTHON_VNC_PORT="${PYTHON_VNC_PORT:-16080}"' in script
     assert 'BASE_URL="${SMOKE_BASE_URL:-http://127.0.0.1:${GATEWAY_PORT}/api-go}"' in script
+    assert 'docker compose -f "$COMPOSE_FILE" down --remove-orphans' in script
     assert 'wait_for_url "${BASE_URL}/solver/status"' in script
-    assert "/solver/restart" in script
-    assert 'payload.get("status")' in script
+    assert 'pytest tests/e2e -q' in script
 
 
 def test_python_worker_smoke_checks_rich_solver_state():
@@ -493,6 +493,13 @@ def test_python_worker_smoke_checks_rich_solver_state():
     assert "/api/solver/status" in script
     assert 'payload.get("status")' in script
     assert 'payload.get("reason"' in script
+
+
+def test_docker_smoke_workflow_installs_pytest_for_e2e():
+    workflow = (ROOT / ".github" / "workflows" / "docker-smoke.yml").read_text(encoding="utf-8")
+    assert "actions/setup-python@v5" in workflow
+    assert "pip install --upgrade pip pytest" in workflow
+    assert "bash scripts/smoke_control_plane.sh" in workflow
 
 
 def test_frontend_routes_actions_through_go_control_plane():
