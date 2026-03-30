@@ -93,13 +93,16 @@ def test_trae_account_service_check_valid_uses_token():
 
 def test_trae_account_service_get_user_info_wraps_failure(monkeypatch):
     from platforms.trae.services.account import TraeAccountService
+    import platforms.trae.services.account as account_module
 
     service = TraeAccountService(RegisterConfig())
+    calls = {}
 
-    def fake_fetch(token: str):
-        raise RuntimeError(f"upstream failed for {token}")
+    def fake_get_user_info(token: str):
+        calls["token"] = token
+        return None
 
-    monkeypatch.setattr(service, "_fetch_user_token", fake_fetch)
+    monkeypatch.setattr(account_module, "get_trae_user_info", fake_get_user_info)
 
     account = Account(platform="trae", email="user@example.com", password="secret", token="trae-token")
 
@@ -108,6 +111,7 @@ def test_trae_account_service_get_user_info_wraps_failure(monkeypatch):
     assert result["ok"] is False
     assert isinstance(result.get("error"), str)
     assert result["error"] == "获取用户信息失败"
+    assert calls["token"] == "trae-token"
 
 
 def test_trae_desktop_service_switch_account_wraps_restart_result(monkeypatch):
