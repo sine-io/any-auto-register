@@ -146,22 +146,29 @@
 
 ### Kiro
 
-**当前混杂点**
+**当前状态 / 剩余耦合点**
 
 - `platforms/kiro/plugin.py`
-  - 既做注册，又做 refresh，又做桌面切换，还做 Kiro Manager 导入
-  - `switch_account` 内包含一条很长的“缺 token -> 自动补抓桌面 token -> refresh -> 切换 -> 重启”链路
+  - 已收缩为薄插件入口
+  - 仍保留少量 mailbox lookup / 兼容日志职责
+  - 通过本地 helper import 按需加载具体 service
+- `platforms/kiro/services/token.py` + `platforms/kiro/services/desktop.py`
+  - 已承接 desktop token bootstrap / refresh / switch orchestration 主链路
+  - 但这条桌面切换链仍需要跨 service 协调 `core.py` 与 `switch.py`，复杂度仍高于 `Cursor / Trae`
 - `platforms/kiro/switch.py`
-  - 既做 token 刷新，也做本地桌面客户端重启
+  - 仍同时负责 token 刷新、本地 token 文件写入、桌面客户端重启
 - `platforms/kiro/account_manager_upload.py`
-  - 与插件 action 强耦合，但本质是外部系统同步
+  - 已从插件 action 路由中抽离
+  - 但底层仍是独立外部同步副作用实现
 
-**后续拆分候选**
+**后续清理候选**
 
-- `KiroTokenService`
-  - refresh / desktop token fetch
-- `KiroDesktopSwitcher`
-- `KiroManagerSyncService`
+- 继续深拆 `platforms/kiro/switch.py`
+  - 将 refresh、token 文件写入、IDE 重启进一步解耦
+- 继续深拆 `platforms/kiro/core.py`
+  - 将 desktop token bootstrap 与注册浏览器流进一步分离
+- 为 `manager_sync` 补统一 action/result helper
+  - 减少各平台手写 envelope 的轻微不对称
 
 ### ChatGPT
 
@@ -274,13 +281,13 @@
   - `KiroDesktopService`
   - `KiroManagerSyncService`
 - 注册阶段的 mailbox lookup 保持单次解析，并把同一个 mailbox account 继续传给 OTP 流程
-- `platforms/kiro/services/__init__.py`
-  - 使用 lazy import 避免插件导入阶段与 service 包产生新的 import-time coupling
+- `platforms/kiro/services/__init__.py` 与 `plugin.py` 中的 helper methods
+  - 都改为按需本地导入，减少插件导入阶段与 service 包之间的 import-time coupling
 
 这说明：
 
 - `Cursor / Trae` 的模式复制到 `Kiro` 整体是干净的
-- 但 `Kiro` 的桌面切换链路更复杂，需要单独的 token service 来吸收 desktop bootstrap / refresh 前置逻辑
+- 但 `Kiro` 的桌面切换链路更复杂，因此按设计保留了独立 token service 来吸收 desktop bootstrap / refresh 前置逻辑
 - 第三个试点继续证明：优先拆编排层和副作用边界，仍比直接重写协议层更稳妥
 
 ## Kiro Pilot Observations
@@ -296,4 +303,3 @@
 - `Cursor / Trae` 模式复制到 `Kiro` 足够干净，可以把它视为第三个参考实现
 - 剩余问题属于兼容性保留和轻微基础设施不对称
 - 当前没有发现阻止后续复制到其他平台的结构性问题
-
