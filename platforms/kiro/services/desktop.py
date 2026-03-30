@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from core.base_platform import RegisterConfig
 from platforms.kiro.services.token import KiroTokenService
 from platforms.kiro.switch import restart_kiro_ide, switch_kiro_account
@@ -32,6 +34,22 @@ class KiroDesktopService:
         refresh_token = data.get("refreshToken", "")
         client_id = data.get("clientId", "")
         client_secret = data.get("clientSecret", "")
+
+        refresh_account = replace(
+            account,
+            extra={
+                **(account.extra or {}),
+                "accessToken": access_token,
+                "refreshToken": refresh_token,
+                "clientId": client_id,
+                "clientSecret": client_secret,
+            },
+        )
+        refreshed = self.token_service.refresh_token(refresh_account)
+        if refreshed.get("ok"):
+            refreshed_data = refreshed.get("data", {})
+            access_token = refreshed_data.get("accessToken") or refreshed_data.get("access_token") or access_token
+            refresh_token = refreshed_data.get("refreshToken", refresh_token)
 
         ok, msg = switch_kiro_account(
             access_token=access_token,

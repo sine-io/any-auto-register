@@ -324,7 +324,7 @@ def test_kiro_desktop_service_switch_account_wraps_restart_result(monkeypatch):
     from platforms.kiro.services.desktop import KiroDesktopService
     import platforms.kiro.services.desktop as desktop_module
 
-    captured = {}
+    captured = {"calls": []}
 
     class FakeKiroTokenService:
         def __init__(self, config=None, log_fn=None):
@@ -332,6 +332,7 @@ def test_kiro_desktop_service_switch_account_wraps_restart_result(monkeypatch):
             captured["log_fn"] = log_fn
 
         def ensure_desktop_tokens(self, account):
+            captured["calls"].append("ensure")
             captured["ensured_account"] = account
             return {
                 "ok": True,
@@ -343,7 +344,20 @@ def test_kiro_desktop_service_switch_account_wraps_restart_result(monkeypatch):
                 },
             }
 
+        def refresh_token(self, account):
+            captured["calls"].append("refresh")
+            captured["refresh_account"] = account
+            return {
+                "ok": True,
+                "data": {
+                    "access_token": "fresh-access-token",
+                    "accessToken": "fresh-access-token",
+                    "refreshToken": "fresh-refresh-token",
+                },
+            }
+
     def fake_switch_kiro_account(access_token, refresh_token, client_id, client_secret):
+        captured["calls"].append("switch")
         captured["switch_args"] = {
             "access_token": access_token,
             "refresh_token": refresh_token,
@@ -354,7 +368,12 @@ def test_kiro_desktop_service_switch_account_wraps_restart_result(monkeypatch):
 
     monkeypatch.setattr(desktop_module, "KiroTokenService", FakeKiroTokenService)
     monkeypatch.setattr(desktop_module, "switch_kiro_account", fake_switch_kiro_account)
-    monkeypatch.setattr(desktop_module, "restart_kiro_ide", lambda: (True, "Kiro IDE 已重启"))
+
+    def fake_restart_kiro_ide():
+        captured["calls"].append("restart")
+        return True, "Kiro IDE 已重启"
+
+    monkeypatch.setattr(desktop_module, "restart_kiro_ide", fake_restart_kiro_ide)
 
     service = KiroDesktopService(config=RegisterConfig(), log_fn=lambda msg: None)
     account = Account(
@@ -367,17 +386,24 @@ def test_kiro_desktop_service_switch_account_wraps_restart_result(monkeypatch):
     result = service.switch_account(account)
 
     assert captured["ensured_account"] is account
+    assert captured["refresh_account"].extra == {
+        "accessToken": "desktop-access-token",
+        "refreshToken": "desktop-refresh-token",
+        "clientId": "desktop-client-id",
+        "clientSecret": "desktop-client-secret",
+    }
+    assert captured["calls"] == ["ensure", "refresh", "switch", "restart"]
     assert captured["switch_args"] == {
-        "access_token": "desktop-access-token",
-        "refresh_token": "desktop-refresh-token",
+        "access_token": "fresh-access-token",
+        "refresh_token": "fresh-refresh-token",
         "client_id": "desktop-client-id",
         "client_secret": "desktop-client-secret",
     }
     assert result == {
         "ok": True,
         "data": {
-            "accessToken": "desktop-access-token",
-            "refreshToken": "desktop-refresh-token",
+            "accessToken": "fresh-access-token",
+            "refreshToken": "fresh-refresh-token",
             "clientId": "desktop-client-id",
             "clientSecret": "desktop-client-secret",
             "message": "切换成功，Kiro IDE 将自动使用新账号。Kiro IDE 已重启",
