@@ -197,3 +197,36 @@
 - 注册编排、外部同步、桌面切换各自有独立服务边界
 - action 结果统一遵守平台契约
 - 至少有一层可脱离真实站点运行的最小单元测试
+
+## Reference Trial: Cursor
+
+`Cursor` 现在可以作为平台治理的第一个参考实现。
+
+本次试点的实际结果是：
+
+- `platforms/cursor/plugin.py`
+  - 收缩为薄插件入口
+- 新增 service 边界：
+  - `CursorRegistrationService`
+  - `CursorAccountService`
+  - `CursorDesktopService`
+- `core.py` 保持为协议实现层
+- `switch.py` 保持为桌面副作用底层实现
+
+这说明：
+
+- 现有插件并不需要一次性重写
+- 先拆“编排层”和“副作用边界”是可行的
+- 契约测试 + service 测试足以支撑第一轮试点
+
+## Suitability For Trae
+
+`Trae` 是最适合直接复用这一模式的下一个平台。
+
+原因：
+
+- 与 `Cursor` 一样，既有注册协议，也有桌面切换 action
+- `plugin.py` 当前同样承担了过多编排职责
+- `switch.py` 同样属于典型桌面副作用边界
+
+因此后续如果继续做试点复制，建议优先把 `Trae` 按 `Cursor` 的结构拆分。

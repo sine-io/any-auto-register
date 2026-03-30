@@ -238,6 +238,22 @@ CursorPlatform.execute_action("get_user_info")
 - 桌面副作用逻辑不再直接散落在插件入口
 - Cursor 可作为后续 `Trae` 试点的模板
 
+## Outcome Notes
+
+试点完成后，建议明确记录：
+
+- `plugin.py` 是否已经真正退化为薄入口
+- `registration / account / desktop` 三个边界是否足以承载后续复制
+- 是否仍然需要继续深拆 `core.py`
+
+如果这些问题的答案分别是：
+
+- 是
+- 是
+- 否
+
+那么下一轮最合理的动作就是把同样模式复制到 `Trae`。
+
 ## Non-Goals
 
 这轮不做：
