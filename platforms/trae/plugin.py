@@ -1,7 +1,13 @@
 """Trae.ai 平台插件"""
-from core.base_platform import BasePlatform, Account, AccountStatus, RegisterConfig
+from core.base_platform import BasePlatform, Account, RegisterConfig
 from core.base_mailbox import BaseMailbox
 from core.registry import register
+from platforms.trae.services import (
+    TraeAccountService,
+    TraeBillingService,
+    TraeDesktopService,
+    TraeRegistrationService,
+)
 
 
 @register
@@ -14,43 +20,36 @@ class TraePlatform(BasePlatform):
         super().__init__(config)
         self.mailbox = mailbox
 
-    def register(self, email: str, password: str = None) -> Account:
-        from platforms.trae.core import TraeRegister
-        log = getattr(self, '_log_fn', print)
-
-        mail_acct = self.mailbox.get_email() if self.mailbox else None
-        email = email or (mail_acct.email if mail_acct else None)
-        log(f"邮箱: {email}")
-        before_ids = self.mailbox.get_current_ids(mail_acct) if mail_acct else set()
-
-        def otp_cb():
-            log("等待验证码...")
-            code = self.mailbox.wait_for_code(mail_acct, keyword="", before_ids=before_ids)
-            if code: log(f"验证码: {code}")
-            return code
-
-        with self._make_executor() as ex:
-            reg = TraeRegister(executor=ex, log_fn=log)
-            result = reg.register(
-                email=email,
-                password=password,
-                otp_callback=otp_cb if self.mailbox else None,
-            )
-
-        return Account(
-            platform="trae",
-            email=result["email"],
-            password=result["password"],
-            user_id=result["user_id"],
-            token=result["token"],
-            region=result["region"],
-            status=AccountStatus.REGISTERED,
-            extra={"cashier_url": result["cashier_url"],
-                   "ai_pay_host": result["ai_pay_host"]},
+    def _registration_service(self) -> TraeRegistrationService:
+        return TraeRegistrationService(
+            config=self.config,
+            mailbox=self.mailbox,
+            log_fn=getattr(self, "_log_fn", print),
         )
 
+    def _account_service(self) -> TraeAccountService:
+        return TraeAccountService(self.config)
+
+    def _desktop_service(self) -> TraeDesktopService:
+        return TraeDesktopService()
+
+    def _billing_service(self) -> TraeBillingService:
+        return TraeBillingService(self, log_fn=getattr(self, "_log_fn", print))
+
+    def _service_action_result(self, result: dict) -> dict:
+        if result.get("ok"):
+            return self._action_success(result.get("data"))
+        return self._action_error(result.get("error", "操作失败"))
+
+    def register(self, email: str, password: str = None) -> Account:
+        log = getattr(self, '_log_fn', print)
+        mail_acct = self.mailbox.get_email() if self.mailbox and not email else None
+        logged_email = email or (mail_acct.email if mail_acct else None)
+        log(f"邮箱: {logged_email}")
+        return self._registration_service().register(email=email, password=password)
+
     def check_valid(self, account: Account) -> bool:
-        return bool(account.token)
+        return self._account_service().check_valid(account)
 
     def get_platform_actions(self) -> list:
         """返回平台支持的操作列表"""
@@ -63,50 +62,12 @@ class TraePlatform(BasePlatform):
     def execute_action(self, action_id: str, account: Account, params: dict) -> dict:
         """执行平台操作"""
         if action_id == "switch_account":
-            from platforms.trae.switch import switch_trae_account, restart_trae_ide
-            
-            token = account.token
-            user_id = account.user_id or ""
-            email = account.email or ""
-            region = account.region or ""
-            
-            if not token:
-                return self._action_error("账号缺少 token")
-            
-            ok, msg = switch_trae_account(token, user_id, email, region)
-            if not ok:
-                return self._action_error(msg)
-            
-            restart_ok, restart_msg = restart_trae_ide()
-            return self._action_success(message=f"{msg}。{restart_msg}" if restart_ok else msg)
-        
+            return self._service_action_result(self._desktop_service().switch_account(account))
+
         elif action_id == "get_user_info":
-            from platforms.trae.switch import get_trae_user_info
-            
-            token = account.token
-            if not token:
-                return self._action_error("账号缺少 token")
-            
-            user_info = get_trae_user_info(token)
-            if user_info:
-                return self._action_success(user_info)
-            return self._action_error("获取用户信息失败")
-        
+            return self._service_action_result(self._account_service().get_user_info(account))
+
         elif action_id == "get_cashier_url":
-            from platforms.trae.core import TraeRegister
-            with self._make_executor() as ex:
-                reg = TraeRegister(executor=ex)
-                # 重新登录刷新 session，再获取新 token 和 cashier_url
-                reg.step4_trae_login()
-                token = reg.step5_get_token()
-                if not token:
-                    token = account.token
-                cashier_url = reg.step7_create_order(token)
-            if not cashier_url:
-                return self._action_error("获取升级链接失败，token 可能已过期，请重新注册")
-            return self._action_success(
-                {"cashier_url": cashier_url},
-                message="请在浏览器中打开升级链接完成 Pro 订阅",
-            )
+            return self._service_action_result(self._billing_service().get_cashier_url(account))
 
         raise NotImplementedError(f"未知操作: {action_id}")

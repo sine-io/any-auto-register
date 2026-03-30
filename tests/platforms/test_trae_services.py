@@ -79,6 +79,75 @@ def test_trae_registration_service_builds_otp_callback(monkeypatch):
     ]
 
 
+def test_trae_platform_register_logs_email_and_delegates_to_registration_service(monkeypatch):
+    from platforms.trae.plugin import TraePlatform
+
+    mailbox = object()
+    logged = []
+    captured = {}
+    expected = Account(
+        platform="trae",
+        email="delegated@example.com",
+        password="secret",
+        user_id="user-id",
+        token="token",
+        region="sg",
+    )
+
+    class FakeRegistrationService:
+        def register(self, email=None, password=None):
+            captured["email"] = email
+            captured["password"] = password
+            return expected
+
+    monkeypatch.setattr(TraePlatform, "_registration_service", lambda self: FakeRegistrationService())
+
+    instance = TraePlatform(RegisterConfig(), mailbox=mailbox)
+    instance._log_fn = logged.append
+
+    result = instance.register("delegated@example.com", "secret")
+
+    assert result is expected
+    assert captured == {"email": "delegated@example.com", "password": "secret"}
+    assert logged == ["邮箱: delegated@example.com"]
+
+
+def test_trae_platform_register_logs_mailbox_email_when_input_missing(monkeypatch):
+    from platforms.trae.plugin import TraePlatform
+
+    logged = []
+    captured = {}
+    expected = Account(
+        platform="trae",
+        email="mailbox@example.com",
+        password="secret",
+    )
+
+    class FakeMailboxAccount:
+        email = "mailbox@example.com"
+
+    class FakeMailbox:
+        def get_email(self):
+            return FakeMailboxAccount()
+
+    class FakeRegistrationService:
+        def register(self, email=None, password=None):
+            captured["email"] = email
+            captured["password"] = password
+            return expected
+
+    monkeypatch.setattr(TraePlatform, "_registration_service", lambda self: FakeRegistrationService())
+
+    instance = TraePlatform(RegisterConfig(), mailbox=FakeMailbox())
+    instance._log_fn = logged.append
+
+    result = instance.register(None, "secret")
+
+    assert result is expected
+    assert captured == {"email": None, "password": "secret"}
+    assert logged == ["邮箱: mailbox@example.com"]
+
+
 def test_trae_account_service_check_valid_uses_token():
     from platforms.trae.services.account import TraeAccountService
 
@@ -208,3 +277,55 @@ def test_trae_billing_service_falls_back_to_account_token(monkeypatch):
     assert created["step4_called"] is True
     assert created["step5_called"] is True
     assert created["create_order_token"] == "account-token"
+
+
+def test_trae_platform_execute_action_delegates_to_services(monkeypatch):
+    from platforms.trae.plugin import TraePlatform
+
+    instance = TraePlatform(RegisterConfig())
+    account = Account(platform="trae", email="user@example.com", password="secret", token="token")
+    calls = []
+
+    class FakeAccountService:
+        def get_user_info(self, delegated_account):
+            calls.append(("get_user_info", delegated_account))
+            return {"ok": True, "data": {"name": "Trae User"}}
+
+    class FakeDesktopService:
+        def switch_account(self, delegated_account):
+            calls.append(("switch_account", delegated_account))
+            return {"ok": True, "data": {"message": "desktop switched"}}
+
+    class FakeBillingService:
+        def get_cashier_url(self, delegated_account):
+            calls.append(("get_cashier_url", delegated_account))
+            return {
+                "ok": True,
+                "data": {
+                    "cashier_url": "https://cashier.example.com",
+                    "message": "请在浏览器中打开升级链接完成 Pro 订阅",
+                },
+            }
+
+    monkeypatch.setattr(TraePlatform, "_account_service", lambda self: FakeAccountService())
+    monkeypatch.setattr(TraePlatform, "_desktop_service", lambda self: FakeDesktopService())
+    monkeypatch.setattr(TraePlatform, "_billing_service", lambda self: FakeBillingService())
+
+    switch_result = instance.execute_action("switch_account", account, {})
+    user_info_result = instance.execute_action("get_user_info", account, {})
+    cashier_result = instance.execute_action("get_cashier_url", account, {})
+
+    assert switch_result == {"ok": True, "data": {"message": "desktop switched"}}
+    assert user_info_result == {"ok": True, "data": {"name": "Trae User"}}
+    assert cashier_result == {
+        "ok": True,
+        "data": {
+            "cashier_url": "https://cashier.example.com",
+            "message": "请在浏览器中打开升级链接完成 Pro 订阅",
+        },
+    }
+    assert calls == [
+        ("switch_account", account),
+        ("get_user_info", account),
+        ("get_cashier_url", account),
+    ]
