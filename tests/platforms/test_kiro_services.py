@@ -1,4 +1,5 @@
 from core.base_platform import Account, RegisterConfig
+import pytest
 
 
 OTP_CODE_PATTERN = r'(?is)(?:verification\s+code|验证码)[^0-9]{0,20}(\d{6})'
@@ -119,6 +120,33 @@ def test_kiro_registration_service_builds_otp_callback(monkeypatch):
             "code_pattern": OTP_CODE_PATTERN,
         }
     ]
+
+
+def test_kiro_registration_service_raises_runtime_error_on_failure(monkeypatch):
+    from platforms.kiro.services.registration import KiroRegistrationService
+    import platforms.kiro.services.registration as registration_module
+
+    class FakeKiroRegister:
+        def __init__(self, proxy=None, tag="KIRO", headless=False):
+            self.log = lambda msg: None
+
+        def register(
+            self,
+            email=None,
+            pwd=None,
+            name="Kiro User",
+            mail_token=None,
+            otp_timeout=120,
+            otp_callback=None,
+        ):
+            return False, {"error": "builder id rejected"}
+
+    monkeypatch.setattr(registration_module, "KiroRegister", FakeKiroRegister)
+
+    service = KiroRegistrationService(config=RegisterConfig(), mailbox=None, log_fn=lambda msg: None)
+
+    with pytest.raises(RuntimeError, match="Kiro 注册失败: builder id rejected"):
+        service.register(email="user@example.com", password="secret")
 
 
 def test_kiro_token_service_check_valid_uses_refresh_credentials(monkeypatch):
@@ -330,6 +358,38 @@ def test_kiro_token_service_ensure_desktop_tokens_bootstraps_with_mailbox_otp(mo
     ]
 
 
+def test_kiro_token_service_ensure_desktop_tokens_wraps_bootstrap_failure(monkeypatch):
+    from platforms.kiro.services.token import KiroTokenService
+    import platforms.kiro.services.token as token_module
+
+    class FakeKiroRegister:
+        def __init__(self, proxy=None, tag="KIRO-SWITCH", headless=False):
+            self.log = lambda msg: None
+
+        def fetch_desktop_tokens(self, email, pwd, otp_callback=None):
+            return False, {"error": "desktop auth failed"}
+
+    monkeypatch.setattr(token_module, "KiroRegister", FakeKiroRegister)
+
+    service = KiroTokenService(config=RegisterConfig(), log_fn=lambda msg: None)
+    account = Account(
+        platform="kiro",
+        email="user@example.com",
+        password="secret",
+        extra={"accessToken": "web-access-token"},
+    )
+
+    result = service.ensure_desktop_tokens(account)
+
+    assert result == {
+        "ok": False,
+        "error": (
+            "当前账号缺少 refreshToken / clientId / clientSecret，"
+            "且自动补抓桌面端 Token 失败: desktop auth failed"
+        ),
+    }
+
+
 def test_kiro_desktop_service_switch_account_wraps_restart_result(monkeypatch):
     from platforms.kiro.services.desktop import KiroDesktopService
     import platforms.kiro.services.desktop as desktop_module
@@ -421,6 +481,126 @@ def test_kiro_desktop_service_switch_account_wraps_restart_result(monkeypatch):
     }
 
 
+def test_kiro_desktop_service_switch_account_continues_when_refresh_fails(monkeypatch):
+    from platforms.kiro.services.desktop import KiroDesktopService
+    import platforms.kiro.services.desktop as desktop_module
+
+    captured = {"calls": []}
+
+    class FakeKiroTokenService:
+        def __init__(self, config=None, log_fn=None):
+            pass
+
+        def ensure_desktop_tokens(self, account):
+            captured["calls"].append("ensure")
+            return {
+                "ok": True,
+                "data": {
+                    "accessToken": "desktop-access-token",
+                    "refreshToken": "desktop-refresh-token",
+                    "clientId": "desktop-client-id",
+                    "clientSecret": "desktop-client-secret",
+                },
+            }
+
+        def refresh_token(self, account):
+            captured["calls"].append("refresh")
+            return {"ok": False, "error": "刷新失败"}
+
+    def fake_switch_kiro_account(access_token, refresh_token, client_id, client_secret):
+        captured["calls"].append("switch")
+        captured["switch_args"] = {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "client_id": client_id,
+            "client_secret": client_secret,
+        }
+        return True, "切换成功，Kiro IDE 将自动使用新账号"
+
+    monkeypatch.setattr(desktop_module, "KiroTokenService", FakeKiroTokenService)
+    monkeypatch.setattr(desktop_module, "switch_kiro_account", fake_switch_kiro_account)
+    monkeypatch.setattr(desktop_module, "restart_kiro_ide", lambda: (False, "重启失败"))
+
+    service = KiroDesktopService(config=RegisterConfig(), log_fn=lambda msg: None)
+    account = Account(platform="kiro", email="user@example.com", password="secret", extra={"accessToken": "web-access-token"})
+
+    result = service.switch_account(account)
+
+    assert captured["calls"] == ["ensure", "refresh", "switch"]
+    assert captured["switch_args"] == {
+        "access_token": "desktop-access-token",
+        "refresh_token": "desktop-refresh-token",
+        "client_id": "desktop-client-id",
+        "client_secret": "desktop-client-secret",
+    }
+    assert result == {
+        "ok": True,
+        "data": {
+            "accessToken": "desktop-access-token",
+            "refreshToken": "desktop-refresh-token",
+            "clientId": "desktop-client-id",
+            "clientSecret": "desktop-client-secret",
+            "message": "切换成功，Kiro IDE 将自动使用新账号",
+        },
+    }
+
+
+def test_kiro_desktop_service_switch_account_wraps_switch_failure(monkeypatch):
+    from platforms.kiro.services.desktop import KiroDesktopService
+    import platforms.kiro.services.desktop as desktop_module
+
+    class FakeKiroTokenService:
+        def __init__(self, config=None, log_fn=None):
+            pass
+
+        def ensure_desktop_tokens(self, account):
+            return {
+                "ok": True,
+                "data": {
+                    "accessToken": "desktop-access-token",
+                    "refreshToken": "desktop-refresh-token",
+                    "clientId": "desktop-client-id",
+                    "clientSecret": "desktop-client-secret",
+                },
+            }
+
+        def refresh_token(self, account):
+            return {
+                "ok": True,
+                "data": {
+                    "accessToken": "fresh-access-token",
+                    "refreshToken": "fresh-refresh-token",
+                },
+            }
+
+    monkeypatch.setattr(desktop_module, "KiroTokenService", FakeKiroTokenService)
+    monkeypatch.setattr(
+        desktop_module,
+        "switch_kiro_account",
+        lambda access_token, refresh_token, client_id, client_secret: (False, "切换失败: cache write error"),
+    )
+
+    service = KiroDesktopService(config=RegisterConfig(), log_fn=lambda msg: None)
+    account = Account(platform="kiro", email="user@example.com", password="secret", extra={"accessToken": "web-access-token"})
+
+    result = service.switch_account(account)
+
+    assert result == {"ok": False, "error": "切换失败: cache write error"}
+
+
+def test_kiro_desktop_service_restart_ide_wraps_failure(monkeypatch):
+    from platforms.kiro.services.desktop import KiroDesktopService
+    import platforms.kiro.services.desktop as desktop_module
+
+    monkeypatch.setattr(desktop_module, "restart_kiro_ide", lambda: (False, "重启失败: app not found"))
+
+    service = KiroDesktopService(config=RegisterConfig(), log_fn=lambda msg: None)
+
+    result = service.restart_ide()
+
+    assert result == {"ok": False, "error": "重启失败: app not found"}
+
+
 def test_kiro_manager_sync_service_upload_wraps_success(monkeypatch):
     from platforms.kiro.services.manager_sync import KiroManagerSyncService
     import platforms.kiro.services.manager_sync as manager_sync_module
@@ -453,3 +633,21 @@ def test_kiro_manager_sync_service_upload_wraps_success(monkeypatch):
         "ok": True,
         "data": {"message": "导入成功: /tmp/accounts.json"},
     }
+
+
+def test_kiro_manager_sync_service_upload_wraps_failure(monkeypatch):
+    from platforms.kiro.services.manager_sync import KiroManagerSyncService
+    import platforms.kiro.services.manager_sync as manager_sync_module
+
+    monkeypatch.setattr(
+        manager_sync_module,
+        "upload_to_kiro_manager",
+        lambda account: (False, "写入失败: permission denied"),
+    )
+
+    service = KiroManagerSyncService()
+    account = Account(platform="kiro", email="user@example.com", password="secret", extra={})
+
+    result = service.upload(account)
+
+    assert result == {"ok": False, "error": "写入失败: permission denied"}
