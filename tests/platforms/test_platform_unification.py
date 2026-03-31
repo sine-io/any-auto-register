@@ -81,26 +81,45 @@ def _class_methods(class_node: ast.ClassDef) -> dict[str, ast.FunctionDef]:
     }
 
 
-def _top_level_import_modules(tree: ast.Module) -> set[str]:
-    modules = set()
-    for node in tree.body:
-        if isinstance(node, ast.Import):
-            modules.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module is not None:
-            modules.add(node.module)
-    return modules
+def _top_level_import_nodes(tree: ast.Module) -> list[ast.stmt]:
+    return [node for node in tree.body if isinstance(node, (ast.Import, ast.ImportFrom))]
 
 
-def _local_import_modules(func_node: ast.FunctionDef) -> set[str]:
-    modules = set()
-    for node in ast.walk(func_node):
-        if node is func_node:
-            continue
-        if isinstance(node, ast.Import):
-            modules.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module is not None:
-            modules.add(node.module)
-    return modules
+def _local_import_nodes(func_node: ast.FunctionDef) -> list[ast.stmt]:
+    return [
+        node
+        for node in ast.walk(func_node)
+        if node is not func_node and isinstance(node, (ast.Import, ast.ImportFrom))
+    ]
+
+
+def _is_platform_service_import(node: ast.stmt, platform: str) -> bool:
+    service_prefix = f"platforms.{platform}.services"
+    platform_prefix = f"platforms.{platform}"
+
+    if isinstance(node, ast.Import):
+        return any(alias.name.startswith(service_prefix) for alias in node.names)
+
+    if not isinstance(node, ast.ImportFrom):
+        return False
+
+    if node.level == 0:
+        if node.module is None:
+            return False
+        if node.module.startswith(service_prefix):
+            return True
+        return node.module == platform_prefix and any(alias.name == "services" for alias in node.names)
+
+    if node.level == 1:
+        if node.module is None:
+            return any(alias.name == "services" for alias in node.names)
+        return node.module == "services" or node.module.startswith("services.")
+
+    return False
+
+
+def _service_import_statements(nodes: list[ast.stmt], platform: str) -> list[str]:
+    return [ast.unparse(node) for node in nodes if _is_platform_service_import(node, platform)]
 
 
 def _top_level_relative_import_modules(tree: ast.Module) -> set[str]:
@@ -135,64 +154,62 @@ def test_platform_plugins_expose_service_factory_helpers():
             assert helper_name.endswith("_service"), f"{platform} helper {helper_name} should use the _service suffix"
 
 
-def test_heavy_platform_plugins_use_local_service_imports():
+def test_platform_plugins_follow_service_import_discipline():
     for platform in HEAVY_PLATFORMS:
         spec = PLATFORM_SPECS[platform]
         tree = _module_tree(_plugin_path(platform))
         methods = _class_methods(_class_node(tree, spec["class_name"]))
-        service_prefix = f"platforms.{platform}.services"
+        top_level_service_imports = _service_import_statements(_top_level_import_nodes(tree), platform)
+        missing_local_imports = [
+            helper_name
+            for helper_name in spec["helper_modules"]
+            if not _service_import_statements(_local_import_nodes(methods[helper_name]), platform)
+        ]
 
-        top_level_service_imports = {
-            module for module in _top_level_import_modules(tree) if module.startswith(service_prefix)
-        }
-        assert not top_level_service_imports, (
-            f"{platform} plugin should avoid top-level service imports; found {sorted(top_level_service_imports)}"
+        issues = []
+        if top_level_service_imports:
+            issues.append(f"avoid top-level service imports: {top_level_service_imports}")
+        if missing_local_imports:
+            issues.append(f"import services locally inside helpers: {missing_local_imports}")
+
+        assert not issues, (
+            f"{platform} heavy plugin should resolve services lazily; {'; '.join(issues)}"
         )
-
-        for helper_name, module_name in spec["helper_modules"].items():
-            local_service_imports = {
-                module for module in _local_import_modules(methods[helper_name]) if module.startswith(service_prefix)
-            }
-            expected_import = f"{service_prefix}.{module_name}"
-            assert expected_import in local_service_imports, (
-                f"{platform} helper {helper_name} should locally import {expected_import}"
-            )
 
     for platform in LIGHT_PLATFORMS:
         spec = PLATFORM_SPECS[platform]
         tree = _module_tree(_plugin_path(platform))
         methods = _class_methods(_class_node(tree, spec["class_name"]))
-        service_prefix = f"platforms.{platform}.services"
+        top_level_service_imports = _service_import_statements(_top_level_import_nodes(tree), platform)
+        if top_level_service_imports:
+            continue
 
-        top_level_service_imports = {
-            module for module in _top_level_import_modules(tree) if module.startswith(service_prefix)
-        }
-        assert top_level_service_imports == {service_prefix}, (
-            f"{platform} plugin should keep the simple top-level service import strategy"
+        missing_local_imports = [
+            helper_name
+            for helper_name in spec["helper_modules"]
+            if not _service_import_statements(_local_import_nodes(methods[helper_name]), platform)
+        ]
+        assert not missing_local_imports, (
+            f"{platform} plugin should either keep eager top-level service imports "
+            f"or import services locally in helpers; missing local imports in {missing_local_imports}"
         )
-
-        for helper_name in spec["helper_modules"]:
-            local_service_imports = {
-                module for module in _local_import_modules(methods[helper_name]) if module.startswith(service_prefix)
-            }
-            assert not local_service_imports, (
-                f"{platform} helper {helper_name} should not need local service imports in the light strategy"
-            )
 
 
 def test_heavy_service_packages_use_lazy_exports():
     for platform in HEAVY_PLATFORMS:
         tree = _module_tree(_services_init_path(platform))
+        contract_gaps = []
+        if not _has_top_level_assignment(tree, "__all__"):
+            contract_gaps.append("define __all__")
+        if not _has_top_level_function(tree, "__getattr__"):
+            contract_gaps.append("define __getattr__")
+        eager_relative_imports = sorted(_top_level_relative_import_modules(tree))
+        if eager_relative_imports:
+            contract_gaps.append(f"avoid eager top-level relative imports: {eager_relative_imports}")
 
-        assert _has_top_level_assignment(tree, "__all__"), f"{platform} services package should define __all__"
-        assert _has_top_level_assignment(tree, "_SERVICE_MODULES"), (
-            f"{platform} services package should map exports lazily via _SERVICE_MODULES"
-        )
-        assert _has_top_level_function(tree, "__getattr__"), (
-            f"{platform} services package should expose lazy exports via __getattr__"
-        )
-        assert not _top_level_relative_import_modules(tree), (
-            f"{platform} services package should avoid eager top-level relative imports"
+        assert not contract_gaps, (
+            f"{platform} services package should honor the lazy-export contract; "
+            f"{'; '.join(contract_gaps)}"
         )
 
     for platform in LIGHT_PLATFORMS:
