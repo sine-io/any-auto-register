@@ -413,3 +413,28 @@
 - 剩余问题主要属于 legacy 兼容债与明确延期范围，而不是模式本身失效
 - 当前没有发现阻止继续沿用该治理模式的结构性问题
 
+## ChatGPT Final Acceptance Verification (2026-03-31)
+
+本轮试点已在 `feature/chatgpt-refactor-spec` 分支执行最终验收，使用的命令如下：
+
+```bash
+cd /root/any-auto-register/.worktrees/chatgpt-refactor-spec
+source /root/any-auto-register/.venv/bin/activate
+pytest tests/platforms/test_chatgpt_services.py tests/platforms/test_platform_contracts.py tests/test_risk_hardening.py -q
+cd go-control-plane && go test ./...
+cd ../frontend && npm run build
+```
+
+验收结果：
+
+- `pytest tests/platforms/test_chatgpt_services.py tests/platforms/test_platform_contracts.py tests/test_risk_hardening.py -q`
+  - 通过：`50 passed in 4.27s`
+- `cd go-control-plane && go test ./...`
+  - 通过：exit code `0`，所有列出的 Go package 均为 `ok` / `[no test files]`
+- `cd ../frontend && npm run build`
+  - 通过：`vite build` 完成，输出 `✓ built in 1.33s`
+
+环境备注：
+
+- `go test ./...` 期间出现 `ld.so` 预加载 `/$LIB/libonion.so` 的 warning
+- 该 warning 未影响测试执行，命令仍以 exit code `0` 通过，因此视为非阻塞环境噪音

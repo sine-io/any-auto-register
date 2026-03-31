@@ -372,3 +372,31 @@ ChatGPTPlatform.execute_action("upload_tm")
 
 因此可以把 `ChatGPT` 视为第五个参考实现；剩余问题属于轻微实现偏差、兼容性保留与明确延期范围，而不是模式失效。
 
+## Final Acceptance Verification (2026-03-31)
+
+本设计在 `feature/chatgpt-refactor-spec` 分支完成文档与试点验收时，执行了以下最终验证命令：
+
+```bash
+cd /root/any-auto-register/.worktrees/chatgpt-refactor-spec
+source /root/any-auto-register/.venv/bin/activate
+pytest tests/platforms/test_chatgpt_services.py tests/platforms/test_platform_contracts.py tests/test_risk_hardening.py -q
+cd go-control-plane && go test ./...
+cd ../frontend && npm run build
+```
+
+结果记录如下：
+
+- Python 验证
+  - 命令：`pytest tests/platforms/test_chatgpt_services.py tests/platforms/test_platform_contracts.py tests/test_risk_hardening.py -q`
+  - 结果：通过，`50 passed in 4.27s`
+- Go 控制面验证
+  - 命令：`cd go-control-plane && go test ./...`
+  - 结果：通过，exit code `0`；所有列出的 package 均返回 `ok` 或 `[no test files]`
+- 前端构建验证
+  - 命令：`cd ../frontend && npm run build`
+  - 结果：通过，`vite build` 完成并输出 `✓ built in 1.33s`
+
+非阻塞环境备注：
+
+- `go test ./...` 期间打印了 `ld.so` 预加载 `/$LIB/libonion.so` 的 warning
+- 该 warning 未改变命令结果，Go 验证仍然完整通过，因此只记录为环境噪音
