@@ -133,6 +133,11 @@ Run:
 ```bash
 pytest tests/platforms/test_platform_unification.py -q
 pytest tests/platforms/test_platform_contracts.py -q
+pytest tests/platforms/test_cursor_services.py -q
+pytest tests/platforms/test_trae_services.py -q
+pytest tests/platforms/test_kiro_services.py -q
+pytest tests/platforms/test_grok_services.py -q
+pytest tests/platforms/test_chatgpt_services.py -q
 ```
 
 Expected:
@@ -172,6 +177,11 @@ Run:
 
 ```bash
 pytest tests/platforms/test_platform_unification.py -q
+pytest tests/platforms/test_cursor_services.py -q
+pytest tests/platforms/test_trae_services.py -q
+pytest tests/platforms/test_kiro_services.py -q
+pytest tests/platforms/test_grok_services.py -q
+pytest tests/platforms/test_chatgpt_services.py -q
 ```
 
 Expected:
@@ -212,6 +222,21 @@ Run:
 cd /root/any-auto-register/.worktrees/platform-unification-spec
 source /root/any-auto-register/.venv/bin/activate
 pytest tests/platforms/test_platform_unification.py tests/platforms/test_platform_contracts.py -q
+pytest tests/platforms/test_cursor_services.py -q
+pytest tests/platforms/test_trae_services.py -q
+pytest tests/platforms/test_kiro_services.py -q
+pytest tests/platforms/test_grok_services.py -q
+pytest tests/platforms/test_chatgpt_services.py -q
+python - <<'PY'
+from core.registry import registry, load_all
+registry.clear()
+load_all()
+required = {"cursor", "trae", "kiro", "grok", "chatgpt"}
+missing = sorted(required - set(registry.keys()))
+if missing:
+    raise SystemExit(f"missing registrations: {missing}")
+print("registry smoke ok")
+PY
 cd go-control-plane && go test ./...
 cd ../frontend && npm run build
 ```
