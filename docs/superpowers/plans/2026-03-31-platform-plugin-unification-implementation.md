@@ -75,7 +75,10 @@ def test_heavy_service_packages_use_lazy_exports():
 
 说明：
 - “heavy platforms” 至少包括 `Kiro`、`ChatGPT`
-- 对 `Grok` 本轮目标要明确下来：统一到 `Kiro` 风格，即避免整包 eager import
+- `Grok` 在本轮中提前锁定为：
+  - `plugin.py` helper 使用局部导入
+  - `services/__init__.py` 切到 lazy export
+  - 导入纪律与 `Kiro / ChatGPT` 对齐
 
 - [ ] **Step 2: Run tests to verify they fail**
 
@@ -127,7 +130,11 @@ Requirements:
 - 不再在 `plugin.py` 顶层直接依赖整包 eager import
 - helper 内改为局部导入，或与最终 `services/__init__.py` 规则相匹配
 - 同步更新 `tests/platforms/test_grok_services.py`
-  - 让 Grok delegation tests 不再依赖 `plugin_module.GrokRegistrationService` 这类顶层符号存在
+  - 让 Grok delegation tests 不再依赖：
+    - `plugin_module.GrokRegistrationService`
+    - `plugin_module.GrokCookieService`
+    - `plugin_module.GrokSyncService`
+    这类顶层符号存在
   - 避免统一收尾本身把既有 Grok 服务/委托测试弄坏
 
 - [ ] **Step 3: Run focused tests**
@@ -150,7 +157,7 @@ Expected:
 - [ ] **Step 4: Commit**
 
 ```bash
-git add platforms/cursor/plugin.py platforms/trae/plugin.py platforms/kiro/plugin.py platforms/grok/plugin.py platforms/chatgpt/plugin.py tests/platforms/test_platform_unification.py
+git add platforms/cursor/plugin.py platforms/trae/plugin.py platforms/kiro/plugin.py platforms/grok/plugin.py platforms/chatgpt/plugin.py tests/platforms/test_platform_unification.py tests/platforms/test_grok_services.py
  git commit -m "refactor: align platform plugin helper conventions"
 ```
 
@@ -169,11 +176,9 @@ git add platforms/cursor/plugin.py platforms/trae/plugin.py platforms/kiro/plugi
 Requirements:
 - `Cursor / Trae` 继续用简单导出，除非引入重依赖证据
 - `Kiro / ChatGPT` 保留 lazy export
-- `Grok` 明确二选一：
-  - 若仍存在 import-time coupling 风险，则切到 lazy export
-  - 否则保留简单导出并在 tests 中明确为轻依赖例外
-
-推荐：`Grok` 与 `Kiro / ChatGPT` 对齐，切到 lazy export
+- `Grok` 本轮明确采用：
+  - lazy export
+  - 与 `Kiro / ChatGPT` 保持一致
 
 - [ ] **Step 2: Run focused tests**
 
@@ -243,6 +248,7 @@ if missing:
 print("registry smoke ok")
 PY
 cd go-control-plane && go test ./...
+cd ../frontend && npm ci
 cd ../frontend && npm run build
 ```
 
