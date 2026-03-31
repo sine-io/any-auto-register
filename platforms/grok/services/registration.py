@@ -18,12 +18,7 @@ class GrokRegistrationService:
         return BasePlatform._make_captcha(self, **kwargs)
 
     def _resolve_yescaptcha_key(self) -> str:
-        if self.config.extra.get("yescaptcha_key"):
-            return self.config.extra["yescaptcha_key"]
-        try:
-            return config_store.get("yescaptcha_key", "")
-        except Exception:
-            return ""
+        return self.config.extra.get("yescaptcha_key") or config_store.get("yescaptcha_key", "")
 
     def _build_otp_callback(self, mail_acct, before_ids: set):
         def otp_cb():
@@ -62,7 +57,7 @@ class GrokRegistrationService:
 
             self.log(f"邮箱: {current_email}")
             before_ids = self.mailbox.get_current_ids(mail_acct) if (self.mailbox and mail_acct) else set()
-            otp_callback = self._build_otp_callback(mail_acct, before_ids) if (self.mailbox and mail_acct) else None
+            otp_callback = self._build_otp_callback(mail_acct, before_ids) if self.mailbox else None
 
             try:
                 result = reg.register(

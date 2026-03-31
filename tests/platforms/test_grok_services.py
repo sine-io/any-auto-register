@@ -162,6 +162,31 @@ def test_grok_registration_service_uses_global_yescaptcha_fallback_and_builds_so
     assert fake_config_store.calls == [("yescaptcha_key", "")]
 
 
+def test_grok_registration_service_surfaces_global_yescaptcha_fallback_errors(monkeypatch):
+    from platforms.grok.services.registration import GrokRegistrationService
+    import platforms.grok.services.registration as registration_module
+
+    class ExplodingConfigStore:
+        def get(self, key, default=""):
+            raise RuntimeError("config store unavailable")
+
+    class UnexpectedGrokRegister:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("register flow should not proceed when config fallback fails")
+
+    monkeypatch.setattr(registration_module, "config_store", ExplodingConfigStore(), raising=False)
+    monkeypatch.setattr(registration_module, "GrokRegister", UnexpectedGrokRegister)
+
+    service = GrokRegistrationService(
+        config=RegisterConfig(extra={}),
+        mailbox=None,
+        log_fn=lambda msg: None,
+    )
+
+    with pytest.raises(RuntimeError, match="config store unavailable"):
+        service.register(email="fallback-error@example.com", password="secret")
+
+
 def test_grok_registration_service_retries_rejected_mailbox_domain(monkeypatch):
     from platforms.grok.services.registration import GrokRegistrationService
     import platforms.grok.services.registration as registration_module
@@ -220,7 +245,7 @@ def test_grok_registration_service_retries_rejected_mailbox_domain(monkeypatch):
     monkeypatch.setattr(registration_module, "GrokRegister", RetryOnceGrokRegister)
 
     auto_service = GrokRegistrationService(
-        config=RegisterConfig(extra={"grok_mailbox_attempts": 3}),
+        config=RegisterConfig(extra={"grok_mailbox_attempts": 3, "yescaptcha_key": "captcha-key"}),
         mailbox=auto_mailbox,
         log_fn=lambda msg: None,
     )
@@ -254,7 +279,7 @@ def test_grok_registration_service_retries_rejected_mailbox_domain(monkeypatch):
     monkeypatch.setattr(registration_module, "GrokRegister", RejectFixedEmailGrokRegister)
 
     fixed_service = GrokRegistrationService(
-        config=RegisterConfig(extra={"grok_mailbox_attempts": 5}),
+        config=RegisterConfig(extra={"grok_mailbox_attempts": 5, "yescaptcha_key": "captcha-key"}),
         mailbox=fixed_mailbox,
         log_fn=lambda msg: None,
     )
@@ -264,6 +289,71 @@ def test_grok_registration_service_retries_rejected_mailbox_domain(monkeypatch):
 
     assert fixed_email_attempts == ["fixed@example.com"]
     assert fixed_mailbox.get_email_calls == 0
+
+
+def test_grok_registration_service_passes_otp_callback_with_fixed_email_when_mailbox_exists(monkeypatch):
+    from platforms.grok.services.registration import GrokRegistrationService
+    import platforms.grok.services.registration as registration_module
+
+    captured = {}
+
+    class FakeMailbox:
+        def get_email(self):
+            raise AssertionError("fixed email path should not rotate mailbox")
+
+        def get_current_ids(self, acct):
+            raise AssertionError("fixed email path should not load mailbox ids")
+
+        def wait_for_code(self, acct, keyword="", before_ids=None, code_pattern=""):
+            captured["wait_call"] = {
+                "acct": acct,
+                "keyword": keyword,
+                "before_ids": before_ids,
+                "code_pattern": code_pattern,
+            }
+            raise RuntimeError("no mailbox account available")
+
+    class TestableGrokRegistrationService(GrokRegistrationService):
+        def _make_captcha(self, **kwargs):
+            return "captcha-solver"
+
+    class FakeGrokRegister:
+        def __init__(self, captcha_solver=None, yescaptcha_key="", proxy=None, log_fn=None):
+            captured["captcha_solver"] = captcha_solver
+
+        def register(self, email=None, password=None, otp_callback=None):
+            captured["email"] = email
+            captured["password"] = password
+            captured["otp_callback"] = otp_callback
+            return {
+                "email": email,
+                "password": password or "generated-secret",
+                "sso": "sso-token",
+                "sso_rw": "sso-rw-token",
+                "given_name": "Fixed",
+                "family_name": "Email",
+            }
+
+    monkeypatch.setattr(registration_module, "GrokRegister", FakeGrokRegister)
+
+    service = TestableGrokRegistrationService(
+        config=RegisterConfig(extra={"yescaptcha_key": "captcha-key"}),
+        mailbox=FakeMailbox(),
+        log_fn=lambda msg: None,
+    )
+
+    account = service.register(email="fixed@example.com", password="secret")
+
+    assert account.email == "fixed@example.com"
+    assert captured["otp_callback"] is not None
+    with pytest.raises(RuntimeError, match="no mailbox account available"):
+        captured["otp_callback"]()
+    assert captured["wait_call"] == {
+        "acct": None,
+        "keyword": "",
+        "before_ids": set(),
+        "code_pattern": OTP_CODE_PATTERN,
+    }
 
 
 def test_grok_registration_service_passes_none_otp_callback_without_mailbox(monkeypatch):
