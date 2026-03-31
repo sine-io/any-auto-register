@@ -110,6 +110,16 @@ platforms/grok/
 - 调用 `GrokRegister.register`
 - 生成 `Account`
 
+并显式保持当前重试语义：
+
+- 只有在调用方没有传入固定 `email` 时，才允许多次 mailbox retry
+- 每次 retry 都重新申请一个新的 mailbox account
+- 单次尝试里，必须复用同一个 `mail_acct` 给：
+  - `get_current_ids()`
+  - OTP callback
+  - 最终邮箱日志输出
+- 如果没有 mailbox，则向 `GrokRegister.register()` 传 `otp_callback=None`，保持当前手工 OTP fallback 能力
+
 ### services/cookie.py
 
 负责：
@@ -124,6 +134,14 @@ platforms/grok/
 - `upload_grok2api`
 
 它是面向外部同步动作的 service 边界。
+
+注意：这轮的 `GrokSyncService` 只承接 **插件 action 路径** 的同步包装，不负责改写：
+
+- `services/external_sync.py::sync_account`
+- `api/integrations.py`
+- `services/grok2api_runtime.py::ensure_grok2api_ready`
+
+这些调用链本轮保持原样，避免把 `Grok` 试点扩大成“平台插件 + 外部集成总线”的双重重构。
 
 ## Why Keep core.py Intact
 
@@ -170,6 +188,21 @@ GrokPlatform.execute_action("upload_grok2api")
   -> GrokSyncService.upload_grok2api
     -> upload_to_grok2api
 ```
+
+### External Sync Paths Kept Unchanged This Round
+
+```text
+api/tasks.py::_auto_upload_integrations
+  -> services.external_sync.sync_account
+    -> services.grok2api_runtime.ensure_grok2api_ready
+    -> platforms.grok.grok2api_upload.upload_to_grok2api
+
+api/integrations.py
+  -> services.grok2api_runtime.ensure_grok2api_ready
+  -> platforms.grok.grok2api_upload.upload_to_grok2api
+```
+
+这些路径不在本轮 `Grok` 插件治理的迁移范围内。
 
 ## Error Handling
 
@@ -219,6 +252,15 @@ GrokPlatform.execute_action("upload_grok2api")
 ### Step 2
 
 先让 services 承接当前 `plugin.py` 的行为，不改 `core.py`。
+
+并明确：
+
+- 只迁移 `GrokPlatform.register`
+- 只迁移 `GrokPlatform.check_valid`
+- 只迁移 `GrokPlatform.execute_action("upload_grok2api")`
+- 不改 `services.external_sync.py`
+- 不改 `api/integrations.py`
+- 不改 `services/grok2api_runtime.py`
 
 ### Step 3
 
