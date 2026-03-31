@@ -66,7 +66,13 @@ def test_trae_execute_action_missing_token_returns_standard_error():
 
 def test_grok_execute_action_failure_returns_standard_error(monkeypatch):
     module = importlib.import_module("platforms.grok.grok2api_upload")
-    monkeypatch.setattr(module, "upload_to_grok2api", lambda account: (False, "upload failed"))
+    monkeypatch.setattr(module, "upload_to_grok2api", lambda account: (True, "legacy direct path"))
+
+    class FakeSyncService:
+        def upload_grok2api(self, account):
+            return {"ok": False, "error": "upload failed"}
+
+    monkeypatch.setattr(GrokPlatform, "_sync_service", lambda self: FakeSyncService())
     instance = GrokPlatform(RegisterConfig())
 
     result = instance.execute_action(

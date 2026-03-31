@@ -436,3 +436,208 @@ def test_grok_sync_service_upload_wraps_success(monkeypatch):
         "ok": True,
         "data": {"message": "导入成功"},
     }
+
+
+def test_grok_platform_register_delegates_to_registration_service(monkeypatch):
+    from platforms.grok.plugin import GrokPlatform
+    import platforms.grok.core as core_module
+    import platforms.grok.plugin as plugin_module
+
+    mailbox = object()
+    captured = {}
+    expected = Account(
+        platform="grok",
+        email="delegated@example.com",
+        password="secret",
+        extra={"sso": "token"},
+    )
+
+    class FakeRegistrationService:
+        def __init__(self, config=None, mailbox=None, log_fn=None):
+            captured["init"] = {
+                "config": config,
+                "mailbox": mailbox,
+                "log_fn": log_fn,
+            }
+
+        def register(self, email=None, password=None):
+            captured["call"] = {
+                "email": email,
+                "password": password,
+            }
+            return expected
+
+    class LegacyGrokRegister:
+        def __init__(self, *args, **kwargs):
+            captured["legacy_path_used"] = True
+
+        def register(self, email=None, password=None, otp_callback=None):
+            return {
+                "email": "legacy@example.com",
+                "password": password or "generated-secret",
+                "sso": "legacy-sso",
+                "sso_rw": "legacy-sso-rw",
+                "given_name": "Legacy",
+                "family_name": "Path",
+            }
+
+    monkeypatch.setattr(plugin_module, "GrokRegistrationService", FakeRegistrationService, raising=False)
+    monkeypatch.setattr(core_module, "GrokRegister", LegacyGrokRegister)
+    monkeypatch.setattr(GrokPlatform, "_make_captcha", lambda self, **kwargs: "captcha-solver")
+
+    instance = GrokPlatform(RegisterConfig(extra={"yescaptcha_key": "captcha-key"}), mailbox=mailbox)
+    log_fn = lambda msg: None
+    instance._log_fn = log_fn
+
+    result = instance.register("delegated@example.com", "secret")
+
+    assert result is expected
+    assert captured["init"] == {
+        "config": instance.config,
+        "mailbox": mailbox,
+        "log_fn": log_fn,
+    }
+    assert captured["call"] == {
+        "email": "delegated@example.com",
+        "password": "secret",
+    }
+    assert "legacy_path_used" not in captured
+
+
+def test_grok_platform_register_preserves_retry_logging_via_registration_service(monkeypatch):
+    from platforms.grok.plugin import GrokPlatform
+    import platforms.grok.services.registration as registration_module
+
+    logged = []
+
+    class FakeMailboxAccount:
+        def __init__(self, email):
+            self.email = email
+
+    class FakeMailbox:
+        def __init__(self, emails):
+            self._accounts = [FakeMailboxAccount(email) for email in emails]
+            self.get_email_calls = 0
+            self.current_id_calls = []
+            self.wait_calls = []
+
+        def get_email(self):
+            acct = self._accounts[self.get_email_calls]
+            self.get_email_calls += 1
+            return acct
+
+        def get_current_ids(self, acct):
+            self.current_id_calls.append(acct.email)
+            return {f"before:{acct.email}"}
+
+        def wait_for_code(self, acct, keyword="", before_ids=None, code_pattern=""):
+            self.wait_calls.append(
+                {
+                    "email": acct.email,
+                    "keyword": keyword,
+                    "before_ids": before_ids,
+                    "code_pattern": code_pattern,
+                }
+            )
+            return "ZXQ-987"
+
+    class RetryOnceGrokRegister:
+        def __init__(self, captcha_solver=None, yescaptcha_key="", proxy=None, log_fn=None):
+            pass
+
+        def register(self, email=None, password=None, otp_callback=None):
+            if email == "blocked@example.com":
+                raise RuntimeError("邮箱域名被拒绝: disposable domain")
+            return {
+                "email": email,
+                "password": password or "generated-secret",
+                "sso": f"otp:{otp_callback()}",
+                "sso_rw": "sso-rw-token",
+                "given_name": "Fresh",
+                "family_name": "Mailbox",
+            }
+
+    monkeypatch.setattr(registration_module, "GrokRegister", RetryOnceGrokRegister)
+    monkeypatch.setattr(
+        registration_module.GrokRegistrationService,
+        "_make_captcha",
+        lambda self, **kwargs: "captcha-solver",
+    )
+
+    mailbox = FakeMailbox(["blocked@example.com", "fresh@example.com"])
+    instance = GrokPlatform(
+        RegisterConfig(extra={"grok_mailbox_attempts": 3, "yescaptcha_key": "captcha-key"}),
+        mailbox=mailbox,
+    )
+    instance._log_fn = logged.append
+
+    account = instance.register(None, "secret")
+
+    assert account.email == "fresh@example.com"
+    assert logged == [
+        "邮箱: blocked@example.com",
+        "Grok 邮箱域名被拒绝，切换新邮箱重试 2/3",
+        "邮箱: fresh@example.com",
+        "等待验证码...",
+        "验证码: ZXQ987",
+    ]
+    assert mailbox.get_email_calls == 2
+    assert mailbox.current_id_calls == ["blocked@example.com", "fresh@example.com"]
+    assert mailbox.wait_calls == [
+        {
+            "email": "fresh@example.com",
+            "keyword": "",
+            "before_ids": {"before:fresh@example.com"},
+            "code_pattern": OTP_CODE_PATTERN,
+        }
+    ]
+
+
+def test_grok_platform_check_valid_delegates_to_cookie_service(monkeypatch):
+    from platforms.grok.plugin import GrokPlatform
+    import platforms.grok.plugin as plugin_module
+
+    account = Account(platform="grok", email="user@example.com", password="secret", extra={"sso": "token"})
+    captured = {}
+
+    class FakeCookieService:
+        def __init__(self, config=None):
+            captured["config"] = config
+
+        def check_valid(self, delegated_account):
+            captured["account"] = delegated_account
+            return True
+
+    monkeypatch.setattr(plugin_module, "GrokCookieService", FakeCookieService, raising=False)
+
+    instance = GrokPlatform(RegisterConfig())
+
+    assert instance.check_valid(account) is True
+    assert captured == {
+        "config": instance.config,
+        "account": account,
+    }
+
+
+def test_grok_platform_execute_action_delegates_to_sync_service(monkeypatch):
+    from platforms.grok.plugin import GrokPlatform
+    import platforms.grok.grok2api_upload as upload_module
+    import platforms.grok.plugin as plugin_module
+
+    account = Account(platform="grok", email="user@example.com", password="secret", extra={"sso": "token"})
+    captured = {}
+
+    class FakeSyncService:
+        def upload_grok2api(self, delegated_account):
+            captured["account"] = delegated_account
+            return {"ok": True, "data": {"message": "delegated upload"}}
+
+    monkeypatch.setattr(plugin_module, "GrokSyncService", FakeSyncService, raising=False)
+    monkeypatch.setattr(upload_module, "upload_to_grok2api", lambda account: (False, "legacy direct upload path"))
+
+    instance = GrokPlatform(RegisterConfig())
+
+    result = instance.execute_action("upload_grok2api", account, {})
+
+    assert result == {"ok": True, "data": {"message": "delegated upload"}}
+    assert captured == {"account": account}
