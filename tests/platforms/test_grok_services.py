@@ -91,59 +91,75 @@ def test_grok_registration_service_uses_global_yescaptcha_fallback_and_builds_so
     import core.config_store as config_store_module
     import platforms.grok.services.registration as registration_module
 
-    config_store_calls = []
-    captcha_calls = []
-    built_solver = object()
-    captured = {}
-
     class FakeConfigStore:
+        def __init__(self):
+            self.calls = []
+
         def get(self, key, default=""):
-            config_store_calls.append((key, default))
+            self.calls.append((key, default))
             return "global-captcha-key"
 
-    class TestableGrokRegistrationService(GrokRegistrationService):
-        def _make_captcha(self, **kwargs):
-            captcha_calls.append(kwargs)
-            return built_solver
+    fake_config_store = FakeConfigStore()
+    monkeypatch.setattr(config_store_module, "config_store", fake_config_store)
+    monkeypatch.setattr(registration_module, "config_store", fake_config_store, raising=False)
 
-    class FakeGrokRegister:
-        def __init__(self, captcha_solver=None, yescaptcha_key="", proxy=None, log_fn=None):
-            captured["captcha_solver"] = captcha_solver
-            captured["yescaptcha_key"] = yescaptcha_key
-            captured["proxy"] = proxy
-            captured["log_fn"] = log_fn
+    def run_case(*, extra, expected_key, email):
+        captured = {}
 
-        def register(self, email=None, password=None, otp_callback=None):
-            captured["email"] = email
-            captured["password"] = password
-            captured["otp_callback"] = otp_callback
-            return {
-                "email": email,
-                "password": password or "generated-secret",
-                "sso": "sso-token",
-                "sso_rw": "sso-rw-token",
-                "given_name": "Grok",
-                "family_name": "User",
-            }
+        class TestableGrokRegistrationService(GrokRegistrationService):
+            def _make_captcha(self, **kwargs):
+                captured["captcha_kwargs"] = kwargs
+                captured["built_solver"] = object()
+                return captured["built_solver"]
 
-    monkeypatch.setattr(config_store_module, "config_store", FakeConfigStore())
-    monkeypatch.setattr(registration_module, "GrokRegister", FakeGrokRegister)
+        class FakeGrokRegister:
+            def __init__(self, captcha_solver=None, yescaptcha_key="", proxy=None, log_fn=None):
+                captured["captcha_solver"] = captcha_solver
+                captured["yescaptcha_key"] = yescaptcha_key
+                captured["proxy"] = proxy
+                captured["log_fn"] = log_fn
 
-    service = TestableGrokRegistrationService(
-        config=RegisterConfig(proxy="http://proxy.example.com", extra={}),
-        mailbox=None,
-        log_fn=lambda msg: None,
+            def register(self, email=None, password=None, otp_callback=None):
+                captured["email"] = email
+                captured["password"] = password
+                captured["otp_callback"] = otp_callback
+                return {
+                    "email": email,
+                    "password": password or "generated-secret",
+                    "sso": "sso-token",
+                    "sso_rw": "sso-rw-token",
+                    "given_name": "Grok",
+                    "family_name": "User",
+                }
+
+        monkeypatch.setattr(registration_module, "GrokRegister", FakeGrokRegister)
+
+        service = TestableGrokRegistrationService(
+            config=RegisterConfig(proxy="http://proxy.example.com", extra=extra),
+            mailbox=None,
+            log_fn=lambda msg: None,
+        )
+
+        account = service.register(email=email, password="secret")
+
+        assert account.email == email
+        assert captured["captcha_kwargs"] == {"key": expected_key}
+        assert captured["captcha_solver"] is captured["built_solver"]
+        assert captured["yescaptcha_key"] == expected_key
+        assert captured["proxy"] == "http://proxy.example.com"
+        assert captured["otp_callback"] is None
+
+    run_case(
+        extra={"yescaptcha_key": "task-captcha-key"},
+        expected_key="task-captcha-key",
+        email="task@example.com",
     )
-
-    account = service.register(email="fallback@example.com", password="secret")
-
-    assert account.email == "fallback@example.com"
-    assert config_store_calls == [("yescaptcha_key", "")]
-    assert captcha_calls == [{"key": "global-captcha-key"}]
-    assert captured["captcha_solver"] is built_solver
-    assert captured["yescaptcha_key"] == "global-captcha-key"
-    assert captured["proxy"] == "http://proxy.example.com"
-    assert captured["otp_callback"] is None
+    run_case(
+        extra={},
+        expected_key="global-captcha-key",
+        email="fallback@example.com",
+    )
+    assert fake_config_store.calls == [("yescaptcha_key", "")]
 
 
 def test_grok_registration_service_retries_rejected_mailbox_domain(monkeypatch):
