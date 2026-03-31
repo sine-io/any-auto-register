@@ -228,11 +228,11 @@ pytest tests/platforms/test_kiro_services.py -q
 pytest tests/platforms/test_grok_services.py -q
 pytest tests/platforms/test_chatgpt_services.py -q
 python - <<'PY'
-from core.registry import registry, load_all
-registry.clear()
+from core.registry import load_all, list_platforms
 load_all()
+names = {item["name"] for item in list_platforms()}
 required = {"cursor", "trae", "kiro", "grok", "chatgpt"}
-missing = sorted(required - set(registry.keys()))
+missing = sorted(required - names)
 if missing:
     raise SystemExit(f"missing registrations: {missing}")
 print("registry smoke ok")
