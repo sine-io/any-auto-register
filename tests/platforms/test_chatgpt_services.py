@@ -133,6 +133,7 @@ def test_chatgpt_registration_service_falls_back_to_tempmail_without_mailbox(mon
     import platforms.chatgpt.services.registration as registration_module
 
     created = {}
+    engine_generated_password = "engine-generated-password"
 
     class FakeTempMailLolMailbox:
         def __init__(self, proxy=None):
@@ -178,7 +179,7 @@ def test_chatgpt_registration_service_falls_back_to_tempmail_without_mailbox(mon
             return SimpleNamespace(
                 success=True,
                 email="generated@tempmail.test",
-                password=self.password,
+                password=engine_generated_password,
                 account_id="chatgpt-account-id",
                 access_token="access-token",
                 refresh_token="refresh-token",
@@ -199,7 +200,7 @@ def test_chatgpt_registration_service_falls_back_to_tempmail_without_mailbox(mon
     account = service.register(email=None, password="secret")
 
     assert account.email == "generated@tempmail.test"
-    assert account.password == "secret"
+    assert account.password == engine_generated_password
     assert account.token == "access-token"
     assert created["proxy"] == "http://proxy.example.com"
     assert created["service_type"] == "tempmail_lol"
@@ -224,6 +225,71 @@ def test_chatgpt_registration_service_falls_back_to_tempmail_without_mailbox(mon
             "exclude_codes": {"old-code"},
         }
     ]
+
+
+def test_chatgpt_registration_service_generates_password_when_missing(monkeypatch):
+    from platforms.chatgpt.services.registration import ChatGPTRegistrationService
+    import platforms.chatgpt.services.registration as registration_module
+
+    generated_password = "GeneratedPass123"
+    captured = {}
+
+    class FakeMailbox:
+        def get_email(self):
+            return MailboxAccount(email="generated@example.com", account_id="mailbox-1")
+
+        def wait_for_code(self, account, keyword="", timeout=120, otp_sent_at=None, exclude_codes=None, **kwargs):
+            return "654321"
+
+    class FakeRegistrationEngine:
+        def __init__(self, email_service=None, proxy_url=None, callback_logger=None, max_retries=3):
+            self.email_service = email_service
+            self.email = None
+            self.password = None
+
+        def run(self):
+            captured["created_email"] = self.email_service.create_email()
+            captured["engine_email"] = self.email
+            captured["engine_password"] = self.password
+            return SimpleNamespace(
+                success=True,
+                email="generated@example.com",
+                password=self.password,
+                account_id="chatgpt-account-id",
+                access_token="access-token",
+                refresh_token="refresh-token",
+                id_token="id-token",
+                session_token="session-token",
+                workspace_id="workspace-id",
+            )
+
+    def fake_choices(population, k):
+        captured["random_population"] = population
+        captured["random_k"] = k
+        return list(generated_password)
+
+    monkeypatch.setattr(registration_module.random, "choices", fake_choices)
+    monkeypatch.setattr(registration_module, "RegistrationEngineV2", FakeRegistrationEngine)
+
+    service = ChatGPTRegistrationService(
+        config=RegisterConfig(),
+        mailbox=FakeMailbox(),
+        log_fn=lambda msg: None,
+    )
+
+    account = service.register(email="generated@example.com", password=None)
+
+    assert account.email == "generated@example.com"
+    assert account.password == generated_password
+    assert captured["created_email"] == {
+        "email": "generated@example.com",
+        "service_id": "mailbox-1",
+        "token": "",
+    }
+    assert captured["engine_email"] == "generated@example.com"
+    assert captured["engine_password"] == generated_password
+    assert captured["random_k"] == 16
+    assert captured["random_population"]
 
 
 def test_chatgpt_token_service_check_valid_uses_subscription_status(monkeypatch):
