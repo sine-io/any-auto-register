@@ -1,13 +1,18 @@
+from __future__ import annotations
+
 """ChatGPT / Codex CLI 平台插件"""
+from typing import TYPE_CHECKING
+
 from core.base_mailbox import BaseMailbox
 from core.base_platform import Account, BasePlatform, RegisterConfig
 from core.registry import register
-from platforms.chatgpt.services import (
-    ChatGPTBillingService,
-    ChatGPTExternalSyncService,
-    ChatGPTRegistrationService,
-    ChatGPTTokenService,
-)
+
+
+if TYPE_CHECKING:
+    from platforms.chatgpt.services.billing import ChatGPTBillingService
+    from platforms.chatgpt.services.external_sync import ChatGPTExternalSyncService
+    from platforms.chatgpt.services.registration import ChatGPTRegistrationService
+    from platforms.chatgpt.services.token import ChatGPTTokenService
 
 
 @register
@@ -21,6 +26,8 @@ class ChatGPTPlatform(BasePlatform):
         self.mailbox = mailbox
 
     def _registration_service(self) -> ChatGPTRegistrationService:
+        from platforms.chatgpt.services.registration import ChatGPTRegistrationService
+
         return ChatGPTRegistrationService(
             config=self.config,
             mailbox=self.mailbox,
@@ -28,12 +35,18 @@ class ChatGPTPlatform(BasePlatform):
         )
 
     def _token_service(self) -> ChatGPTTokenService:
+        from platforms.chatgpt.services.token import ChatGPTTokenService
+
         return ChatGPTTokenService(self.config)
 
     def _billing_service(self) -> ChatGPTBillingService:
+        from platforms.chatgpt.services.billing import ChatGPTBillingService
+
         return ChatGPTBillingService(self.config)
 
     def _external_sync_service(self) -> ChatGPTExternalSyncService:
+        from platforms.chatgpt.services.external_sync import ChatGPTExternalSyncService
+
         return ChatGPTExternalSyncService()
 
     def check_valid(self, account: Account) -> bool:

@@ -1,3 +1,5 @@
+import importlib
+import sys
 from types import SimpleNamespace
 
 from core.base_mailbox import MailboxAccount
@@ -17,6 +19,27 @@ def _make_chatgpt_account(*, token: str = "fallback-access", extra: dict | None 
         status=AccountStatus.REGISTERED,
         extra=extra or {},
     )
+
+
+def test_chatgpt_plugin_import_does_not_eagerly_load_service_modules():
+    module_names = [
+        "platforms.chatgpt.plugin",
+        "platforms.chatgpt.services",
+        "platforms.chatgpt.services.registration",
+        "platforms.chatgpt.services.token",
+        "platforms.chatgpt.services.billing",
+        "platforms.chatgpt.services.external_sync",
+        "platforms.chatgpt.register_v2",
+    ]
+
+    for name in module_names:
+        sys.modules.pop(name, None)
+
+    plugin_module = importlib.import_module("platforms.chatgpt.plugin")
+
+    assert plugin_module.ChatGPTPlatform.__name__ == "ChatGPTPlatform"
+    for name in module_names[1:]:
+        assert name not in sys.modules
 
 
 def test_chatgpt_registration_service_uses_generic_mailbox_adapter(monkeypatch):
