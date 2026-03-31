@@ -6,6 +6,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 HEAVY_PLATFORMS = ("kiro", "grok", "chatgpt")
 LIGHT_PLATFORMS = ("cursor", "trae")
+LAZY_EXPORT_PLATFORMS = ("kiro", "chatgpt")
+DIRECT_EXPORT_PLATFORMS = ("cursor", "trae", "grok")
 
 PLATFORM_SPECS = {
     "cursor": {
@@ -81,6 +83,14 @@ def _class_methods(class_node: ast.ClassDef) -> dict[str, ast.FunctionDef]:
     }
 
 
+def _class_method_names_in_order(class_node: ast.ClassDef) -> list[str]:
+    return [
+        node.name
+        for node in class_node.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+
+
 def _top_level_import_nodes(tree: ast.Module) -> list[ast.stmt]:
     return [node for node in tree.body if isinstance(node, (ast.Import, ast.ImportFrom))]
 
@@ -154,6 +164,34 @@ def test_platform_plugins_expose_service_factory_helpers():
             assert helper_name.endswith("_service"), f"{platform} helper {helper_name} should use the _service suffix"
 
 
+def test_platform_plugins_follow_recommended_method_order():
+    for platform, spec in PLATFORM_SPECS.items():
+        tree = _module_tree(_plugin_path(platform))
+        method_names = _class_method_names_in_order(_class_node(tree, spec["class_name"]))
+        method_positions = {name: index for index, name in enumerate(method_names)}
+        helper_names = list(spec["helper_modules"])
+        helper_positions = [method_positions[name] for name in helper_names]
+
+        assert method_positions["__init__"] < min(helper_positions), (
+            f"{platform} plugin should place __init__ before helper factories"
+        )
+        assert helper_positions == sorted(helper_positions), (
+            f"{platform} plugin should keep helper factories in the documented order"
+        )
+        assert max(helper_positions) < method_positions["register"], (
+            f"{platform} plugin should place helper factories before register"
+        )
+        assert method_positions["register"] < method_positions["check_valid"], (
+            f"{platform} plugin should place register before check_valid"
+        )
+        assert method_positions["check_valid"] < method_positions["get_platform_actions"], (
+            f"{platform} plugin should place check_valid before get_platform_actions"
+        )
+        assert method_positions["get_platform_actions"] < method_positions["execute_action"], (
+            f"{platform} plugin should place get_platform_actions before execute_action"
+        )
+
+
 def test_platform_plugins_follow_service_import_discipline():
     for platform in HEAVY_PLATFORMS:
         spec = PLATFORM_SPECS[platform]
@@ -196,7 +234,7 @@ def test_platform_plugins_follow_service_import_discipline():
 
 
 def test_heavy_service_packages_use_lazy_exports():
-    for platform in HEAVY_PLATFORMS:
+    for platform in LAZY_EXPORT_PLATFORMS:
         tree = _module_tree(_services_init_path(platform))
         contract_gaps = []
         if not _has_top_level_assignment(tree, "__all__"):
@@ -212,7 +250,7 @@ def test_heavy_service_packages_use_lazy_exports():
             f"{'; '.join(contract_gaps)}"
         )
 
-    for platform in LIGHT_PLATFORMS:
+    for platform in DIRECT_EXPORT_PLATFORMS:
         tree = _module_tree(_services_init_path(platform))
 
         assert _has_top_level_assignment(tree, "__all__"), f"{platform} services package should define __all__"

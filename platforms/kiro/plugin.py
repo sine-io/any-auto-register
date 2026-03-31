@@ -1,6 +1,6 @@
 """Kiro 平台插件 - 基于 AWS Builder ID 注册"""
-from core.base_platform import BasePlatform, Account, RegisterConfig
 from core.base_mailbox import BaseMailbox
+from core.base_platform import Account, BasePlatform, RegisterConfig
 from core.registry import register
 
 

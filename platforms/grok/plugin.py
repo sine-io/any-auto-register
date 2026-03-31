@@ -1,12 +1,17 @@
+from __future__ import annotations
+
 """Grok (x.ai) 平台插件"""
-from core.base_platform import BasePlatform, Account, RegisterConfig
+from typing import TYPE_CHECKING
+
 from core.base_mailbox import BaseMailbox
+from core.base_platform import Account, BasePlatform, RegisterConfig
 from core.registry import register
-from platforms.grok.services import (
-    GrokCookieService,
-    GrokRegistrationService,
-    GrokSyncService,
-)
+
+
+if TYPE_CHECKING:
+    from platforms.grok.services.cookie import GrokCookieService
+    from platforms.grok.services.registration import GrokRegistrationService
+    from platforms.grok.services.sync import GrokSyncService
 
 
 @register
@@ -20,6 +25,8 @@ class GrokPlatform(BasePlatform):
         self.mailbox = mailbox
 
     def _registration_service(self) -> GrokRegistrationService:
+        from platforms.grok.services.registration import GrokRegistrationService
+
         return GrokRegistrationService(
             config=self.config,
             mailbox=self.mailbox,
@@ -27,9 +34,13 @@ class GrokPlatform(BasePlatform):
         )
 
     def _cookie_service(self) -> GrokCookieService:
+        from platforms.grok.services.cookie import GrokCookieService
+
         return GrokCookieService(self.config)
 
     def _sync_service(self) -> GrokSyncService:
+        from platforms.grok.services.sync import GrokSyncService
+
         return GrokSyncService()
 
     def register(self, email: str, password: str = None) -> Account:

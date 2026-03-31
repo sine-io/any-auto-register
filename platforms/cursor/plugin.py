@@ -1,6 +1,6 @@
 """Cursor 平台插件"""
-from core.base_platform import BasePlatform, Account, AccountStatus, RegisterConfig
 from core.base_mailbox import BaseMailbox
+from core.base_platform import Account, BasePlatform, RegisterConfig
 from core.registry import register
 from platforms.cursor.services import (
     CursorAccountService,
@@ -49,8 +49,8 @@ class CursorPlatform(BasePlatform):
         """执行平台操作"""
         if action_id == "switch_account":
             return self._desktop_service().switch_account(account)
-        
+
         elif action_id == "get_user_info":
             return self._account_service().get_user_info(account)
-        
+
         raise NotImplementedError(f"未知操作: {action_id}")

@@ -1,6 +1,6 @@
 """Trae.ai 平台插件"""
-from core.base_platform import BasePlatform, Account, RegisterConfig
 from core.base_mailbox import BaseMailbox
+from core.base_platform import Account, BasePlatform, RegisterConfig
 from core.registry import register
 from platforms.trae.services import (
     TraeAccountService,
@@ -42,7 +42,7 @@ class TraePlatform(BasePlatform):
         return self._action_error(result.get("error", "操作失败"))
 
     def register(self, email: str, password: str = None) -> Account:
-        log = getattr(self, '_log_fn', print)
+        log = getattr(self, "_log_fn", print)
         mail_acct = self.mailbox.get_email() if self.mailbox and not email else None
         logged_email = email or (mail_acct.email if mail_acct else None)
         log(f"邮箱: {logged_email}")

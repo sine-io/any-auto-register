@@ -441,7 +441,7 @@ def test_grok_sync_service_upload_wraps_success(monkeypatch):
 def test_grok_platform_register_delegates_to_registration_service(monkeypatch):
     from platforms.grok.plugin import GrokPlatform
     import platforms.grok.core as core_module
-    import platforms.grok.plugin as plugin_module
+    import platforms.grok.services.registration as registration_module
 
     mailbox = object()
     captured = {}
@@ -481,9 +481,12 @@ def test_grok_platform_register_delegates_to_registration_service(monkeypatch):
                 "family_name": "Path",
             }
 
-    monkeypatch.setattr(plugin_module, "GrokRegistrationService", FakeRegistrationService, raising=False)
+    monkeypatch.setattr(
+        registration_module,
+        "GrokRegistrationService",
+        FakeRegistrationService,
+    )
     monkeypatch.setattr(core_module, "GrokRegister", LegacyGrokRegister)
-    monkeypatch.setattr(GrokPlatform, "_make_captcha", lambda self, **kwargs: "captcha-solver")
 
     instance = GrokPlatform(RegisterConfig(extra={"yescaptcha_key": "captcha-key"}), mailbox=mailbox)
     log_fn = lambda msg: None
@@ -595,7 +598,7 @@ def test_grok_platform_register_preserves_retry_logging_via_registration_service
 
 def test_grok_platform_check_valid_delegates_to_cookie_service(monkeypatch):
     from platforms.grok.plugin import GrokPlatform
-    import platforms.grok.plugin as plugin_module
+    import platforms.grok.services.cookie as cookie_module
 
     account = Account(platform="grok", email="user@example.com", password="secret", extra={"sso": "token"})
     captured = {}
@@ -608,7 +611,7 @@ def test_grok_platform_check_valid_delegates_to_cookie_service(monkeypatch):
             captured["account"] = delegated_account
             return True
 
-    monkeypatch.setattr(plugin_module, "GrokCookieService", FakeCookieService, raising=False)
+    monkeypatch.setattr(cookie_module, "GrokCookieService", FakeCookieService)
 
     instance = GrokPlatform(RegisterConfig())
 
@@ -622,7 +625,7 @@ def test_grok_platform_check_valid_delegates_to_cookie_service(monkeypatch):
 def test_grok_platform_execute_action_delegates_to_sync_service(monkeypatch):
     from platforms.grok.plugin import GrokPlatform
     import platforms.grok.grok2api_upload as upload_module
-    import platforms.grok.plugin as plugin_module
+    import platforms.grok.services.sync as sync_module
 
     account = Account(platform="grok", email="user@example.com", password="secret", extra={"sso": "token"})
     captured = {}
@@ -632,7 +635,7 @@ def test_grok_platform_execute_action_delegates_to_sync_service(monkeypatch):
             captured["account"] = delegated_account
             return {"ok": True, "data": {"message": "delegated upload"}}
 
-    monkeypatch.setattr(plugin_module, "GrokSyncService", FakeSyncService, raising=False)
+    monkeypatch.setattr(sync_module, "GrokSyncService", FakeSyncService)
     monkeypatch.setattr(upload_module, "upload_to_grok2api", lambda account: (False, "legacy direct upload path"))
 
     instance = GrokPlatform(RegisterConfig())

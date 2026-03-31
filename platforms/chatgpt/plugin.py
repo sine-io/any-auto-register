@@ -49,11 +49,11 @@ class ChatGPTPlatform(BasePlatform):
 
         return ChatGPTExternalSyncService()
 
-    def check_valid(self, account: Account) -> bool:
-        return self._token_service().check_valid(account)
-
     def register(self, email: str = None, password: str = None) -> Account:
         return self._registration_service().register(email=email, password=password)
+
+    def check_valid(self, account: Account) -> bool:
+        return self._token_service().check_valid(account)
 
     def get_platform_actions(self) -> list:
         return [
