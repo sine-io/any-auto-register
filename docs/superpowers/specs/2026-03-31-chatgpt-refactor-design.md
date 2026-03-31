@@ -1,5 +1,7 @@
 # ChatGPT Platform Refactor Design
 
+> 状态（2026-03-31）：本设计已在 `feature/chatgpt-refactor-spec` 分支落地。本文保留原始设计意图，同时在文末追加“实际落地结果 / 实现偏差 / 试点验收结论”。
+
 **Goal**
 
 把 `ChatGPT` 平台从“插件入口同时承担注册编排、token 刷新、支付链接生成和外部同步动作”重构为“薄插件 + 明确 service 边界”的结构，并且保持对外行为不变。
@@ -301,3 +303,72 @@ ChatGPTPlatform.execute_action("upload_tm")
 - 深拆 `cpa_upload.py`
 - 改动 Go worker 协议
 - 改动前端
+
+## Implementation Outcome
+
+当前分支的实际落地结果是：
+
+- 已新增 `platforms/chatgpt/services/`
+  - `registration.py`
+  - `token.py`
+  - `billing.py`
+  - `external_sync.py`
+- `platforms/chatgpt/plugin.py` 已收缩为薄插件入口
+  - `register()` 委托给 `ChatGPTRegistrationService`
+  - `check_valid()` 委托给 `ChatGPTTokenService`
+  - `execute_action("refresh_token" / "payment_link" / "upload_cpa" / "upload_tm")` 全部委托给对应 services
+- `plugin.py` 的 helper factories 使用本地直接子模块导入
+  - 避免在导入 `platforms.chatgpt.plugin` 时提前加载 `platforms.chatgpt.services`、`services.registration` 和 `register_v2.py`
+- `ChatGPTPlatform` 的 action id、返回 envelope、默认参数路由保持不变
+- 插件 action 路径之外的平行调用链保持原样
+  - `api/chatgpt.py`
+  - `services.external_sync.py`
+
+## Behavior Parity Confirmed
+
+本轮实现显式保留了以下关键语义：
+
+- 自定义 mailbox 路径仍通过 generic mailbox adapter 组装注册流程
+  - 固定 `email` 时继续复用同一个 mailbox account，不会偷偷切换邮箱
+- 无 mailbox 时仍回退到 `TempMailLolMailbox`
+  - `register_max_retries` 继续从 `config.extra` 读取，默认值仍为 `3`
+- `check_valid()` 仍基于订阅状态判断有效性
+  - `free / plus / team` 继续视为有效
+  - `expired / invalid / banned / None` 继续视为无效
+- `refresh_token / payment_link / upload_cpa / upload_tm` 继续暴露相同 action id，并返回统一 action envelope
+- 插件导入阶段不再 eager 地拉起 services / registration path
+  - 这是导入时行为收敛，不改变 `ChatGPTPlatform` 的外部接口
+
+## Deviations Observed During Implementation
+
+相对设计阶段与前四个参考实现，本轮记录到的偏差主要有三点：
+
+- `platforms/chatgpt/token_refresh.py` 与 `platforms/chatgpt/payment.py` 这两个 preserved legacy 模块当前并非直接 import-safe
+  - 它们仍保留对 legacy `Account` 形状的假设
+  - 因此 `ChatGPTTokenService` / `ChatGPTBillingService` 通过 compatibility loader shim 注入适配后的 `Account`，而不是直接普通导入
+- 为避免导入 `plugin.py` 时把注册链路整条提前拉起
+  - `ChatGPTPlatform` 选择了本地 helper + 直接子模块导入
+  - 而不是像 `Grok` 那样直接导入 `platforms.chatgpt.services` 包
+- `ChatGPT` 的主要复杂度并不在桌面或浏览器自动化深度
+  - 而在 registration / token / billing / external sync 四类 capability routing 的广度
+  - 因此本轮没有复制 `Kiro` 式 token bootstrap service，也没有进入 `Grok` 式浏览器流深拆
+
+另有一项明确的范围控制需要单独记录：
+
+- `ChatGPTExternalSyncService` 只覆盖 `ChatGPTPlatform.execute_action()` 路径
+- `api/chatgpt.py` / `services.external_sync.py` 这类平行直连调用链按计划继续保留，不在本轮迁移范围内
+
+## Pilot Assessment
+
+对“`Cursor / Trae / Kiro / Grok` 模式能否复制到 `ChatGPT`”的结论是：
+
+- 可以，且整体复制仍然干净
+- 这次复制不是逐文件照搬
+  - `ChatGPT` 需要额外处理 legacy 模块的 import-safe 兼容问题
+  - 也更强调 capability routing breadth，而不是浏览器 / 桌面副作用链深拆
+- 当前剩余问题主要是：
+  - legacy `payment.py / token_refresh.py` 的兼容债
+  - `api/chatgpt.py` / `services.external_sync.py` 尚未纳入统一 sync service 边界
+
+因此可以把 `ChatGPT` 视为第五个参考实现；剩余问题属于轻微实现偏差、兼容性保留与明确延期范围，而不是模式失效。
+
