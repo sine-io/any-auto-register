@@ -1,8 +1,13 @@
 """ChatGPT / Codex CLI 平台插件"""
-import random, string
-from core.base_platform import BasePlatform, Account, AccountStatus, RegisterConfig
 from core.base_mailbox import BaseMailbox
+from core.base_platform import Account, BasePlatform, RegisterConfig
 from core.registry import register
+from platforms.chatgpt.services import (
+    ChatGPTBillingService,
+    ChatGPTExternalSyncService,
+    ChatGPTRegistrationService,
+    ChatGPTTokenService,
+)
 
 
 @register
@@ -15,197 +20,80 @@ class ChatGPTPlatform(BasePlatform):
         super().__init__(config)
         self.mailbox = mailbox
 
+    def _registration_service(self) -> ChatGPTRegistrationService:
+        return ChatGPTRegistrationService(
+            config=self.config,
+            mailbox=self.mailbox,
+            log_fn=getattr(self, "_log_fn", print),
+        )
+
+    def _token_service(self) -> ChatGPTTokenService:
+        return ChatGPTTokenService(self.config)
+
+    def _billing_service(self) -> ChatGPTBillingService:
+        return ChatGPTBillingService(self.config)
+
+    def _external_sync_service(self) -> ChatGPTExternalSyncService:
+        return ChatGPTExternalSyncService()
+
     def check_valid(self, account: Account) -> bool:
-        try:
-            from platforms.chatgpt.payment import check_subscription_status
-            class _A: pass
-            a = _A()
-            extra = account.extra or {}
-            a.access_token = extra.get("access_token") or account.token
-            a.cookies = extra.get("cookies", "")
-            status = check_subscription_status(a, proxy=self.config.proxy if self.config else None)
-            return status not in ("expired", "invalid", "banned", None)
-        except Exception:
-            return False
+        return self._token_service().check_valid(account)
 
     def register(self, email: str = None, password: str = None) -> Account:
-        if not password:
-            password = "".join(random.choices(
-                string.ascii_letters + string.digits + "!@#$", k=16))
-
-        proxy = self.config.proxy if self.config else None
-        log_fn = getattr(self, '_log_fn', print)
-        from platforms.chatgpt.register_v2 import RegistrationEngineV2 as RegistrationEngine
-        log_fn = getattr(self, '_log_fn', print)
-        max_retries = 3
-        if self.config and getattr(self.config, "extra", None):
-            try:
-                max_retries = int((self.config.extra or {}).get("register_max_retries", 3) or 3)
-            except Exception:
-                max_retries = 3
-
-        if self.mailbox:
-            # 通用 EmailService 适配器，支持所有 BaseMailbox 实现 (cfworker, duckmail, laoudo 等)
-            _mailbox = self.mailbox
-            _fixed_email = email
-
-            class GenericEmailService:
-                service_type = type('ST', (), {'value': 'custom_provider'})()
-                def __init__(self):
-                    self._acct = None
-                    self._email = _fixed_email
-                def create_email(self, config=None):
-                    if self._email and self._acct and _fixed_email:
-                        return {'email': self._email, 'service_id': self._acct.account_id, 'token': ''}
-                    self._acct = _mailbox.get_email()
-                    if not self._email:
-                        self._email = self._acct.email
-                    elif not _fixed_email:
-                        self._email = self._acct.email
-                    return {'email': self._email, 'service_id': self._acct.account_id, 'token': ''}
-                def get_verification_code(self, email=None, email_id=None, timeout=120, pattern=None, otp_sent_at=None, exclude_codes=None):
-                    if not self._acct:
-                        raise RuntimeError("邮箱账户尚未创建，无法获取验证码")
-                    return _mailbox.wait_for_code(
-                        self._acct,
-                        keyword="",
-                        timeout=timeout,
-                        otp_sent_at=otp_sent_at,
-                        exclude_codes=exclude_codes,
-                    )
-                def update_status(self, success, error=None): pass
-                @property
-                def status(self): return None
-
-            engine = RegistrationEngine(
-                email_service=GenericEmailService(),
-                proxy_url=proxy, callback_logger=log_fn, max_retries=max_retries)
-            engine.email = email
-            engine.password = password
-        else:
-            # 兼容逻辑：若未传入 mailbox 则默认使用 tempmail_lol
-            from core.base_mailbox import TempMailLolMailbox
-            _tmail = TempMailLolMailbox(proxy=proxy)
-
-            class TempMailEmailService:
-                service_type = type('ST', (), {'value': 'tempmail_lol'})()
-                def create_email(self, config=None):
-                    acct = _tmail.get_email()
-                    self._acct = acct
-                    return {'email': acct.email, 'service_id': acct.account_id, 'token': acct.account_id}
-                def get_verification_code(self, email=None, email_id=None, timeout=120, pattern=None, otp_sent_at=None, exclude_codes=None):
-                    return _tmail.wait_for_code(
-                        self._acct,
-                        keyword="",
-                        timeout=timeout,
-                        otp_sent_at=otp_sent_at,
-                        exclude_codes=exclude_codes,
-                    )
-                def update_status(self, success, error=None): pass
-                @property
-                def status(self): return None
-
-            engine = RegistrationEngine(
-                email_service=TempMailEmailService(),
-                proxy_url=proxy, callback_logger=log_fn, max_retries=max_retries)
-            if email:
-                engine.email = email
-                engine.password = password
-
-        result = engine.run()
-        if not result or not result.success:
-            raise RuntimeError(result.error_message if result else '注册失败')
-
-        return Account(
-            platform='chatgpt',
-            email=result.email,
-            password=result.password or password,
-            user_id=result.account_id,
-            token=result.access_token,
-            status=AccountStatus.REGISTERED,
-            extra={
-                'access_token':  result.access_token,
-                'refresh_token': result.refresh_token,
-                'id_token':      result.id_token,
-                'session_token': result.session_token,
-                'workspace_id':  result.workspace_id,
-            },
-        )
+        return self._registration_service().register(email=email, password=password)
 
     def get_platform_actions(self) -> list:
         return [
             {"id": "refresh_token", "label": "刷新 Token", "params": []},
-            {"id": "payment_link", "label": "生成支付链接",
-             "params": [
-                 {"key": "country", "label": "地区", "type": "select",
-                  "options": ["US","SG","TR","HK","JP","GB","AU","CA"]},
-                 {"key": "plan", "label": "套餐", "type": "select",
-                  "options": ["plus", "team"]},
-             ]},
-            {"id": "upload_cpa", "label": "上传 CPA",
-             "params": [
-                 {"key": "api_url", "label": "CPA API URL", "type": "text"},
-                 {"key": "api_key", "label": "CPA API Key", "type": "text"},
-             ]},
-            {"id": "upload_tm", "label": "上传 Team Manager",
-             "params": [
-                 {"key": "api_url", "label": "TM API URL", "type": "text"},
-                 {"key": "api_key", "label": "TM API Key", "type": "text"},
-             ]},
+            {
+                "id": "payment_link",
+                "label": "生成支付链接",
+                "params": [
+                    {"key": "country", "label": "地区", "type": "select", "options": ["US", "SG", "TR", "HK", "JP", "GB", "AU", "CA"]},
+                    {"key": "plan", "label": "套餐", "type": "select", "options": ["plus", "team"]},
+                ],
+            },
+            {
+                "id": "upload_cpa",
+                "label": "上传 CPA",
+                "params": [
+                    {"key": "api_url", "label": "CPA API URL", "type": "text"},
+                    {"key": "api_key", "label": "CPA API Key", "type": "text"},
+                ],
+            },
+            {
+                "id": "upload_tm",
+                "label": "上传 Team Manager",
+                "params": [
+                    {"key": "api_url", "label": "TM API URL", "type": "text"},
+                    {"key": "api_key", "label": "TM API Key", "type": "text"},
+                ],
+            },
         ]
 
     def execute_action(self, action_id: str, account: Account, params: dict) -> dict:
-        proxy = self.config.proxy if self.config else None
-        extra = account.extra or {}
-
-        class _A: pass
-        a = _A()
-        a.email = account.email
-        a.access_token = extra.get("access_token") or account.token
-        a.refresh_token = extra.get("refresh_token", "")
-        a.id_token = extra.get("id_token", "")
-        a.session_token = extra.get("session_token", "")
-        a.client_id = extra.get("client_id", "app_EMoamEEZ73f0CkXaXp7hrann")
-        a.cookies = extra.get("cookies", "")
-
         if action_id == "refresh_token":
-            from platforms.chatgpt.token_refresh import TokenRefreshManager
-            manager = TokenRefreshManager(proxy_url=proxy)
-            result = manager.refresh_account(a)
-            if result.success:
-                return self._action_success({
-                    "access_token": result.access_token,
-                    "refresh_token": result.refresh_token,
-                })
-            return self._action_error(result.error_message)
+            return self._token_service().refresh_token(account)
 
         elif action_id == "payment_link":
-            from platforms.chatgpt.payment import generate_plus_link, generate_team_link
-            plan = params.get("plan", "plus")
-            country = params.get("country", "US")
-            if plan == "plus":
-                url = generate_plus_link(a, proxy=proxy, country=country)
-            else:
-                url = generate_team_link(a, proxy=proxy, country=country)
-            if url:
-                return self._action_success({"url": url})
-            return self._action_error("生成支付链接失败")
+            return self._billing_service().payment_link(
+                account,
+                plan=params.get("plan", "plus"),
+                country=params.get("country", "US"),
+            )
 
         elif action_id == "upload_cpa":
-            from platforms.chatgpt.cpa_upload import upload_to_cpa, generate_token_json
-            token_data = generate_token_json(a)
-            ok, msg = upload_to_cpa(token_data, api_url=params.get("api_url"),
-                                    api_key=params.get("api_key"))
-            if ok:
-                return self._action_success(message=msg)
-            return self._action_error(msg)
+            return self._external_sync_service().upload_cpa(
+                account,
+                api_url=params.get("api_url"),
+                api_key=params.get("api_key"),
+            )
 
         elif action_id == "upload_tm":
-            from platforms.chatgpt.cpa_upload import upload_to_team_manager
-            ok, msg = upload_to_team_manager(a, api_url=params.get("api_url"),
-                                             api_key=params.get("api_key"))
-            if ok:
-                return self._action_success(message=msg)
-            return self._action_error(msg)
+            return self._external_sync_service().upload_tm(
+                account,
+                api_url=params.get("api_url"),
+                api_key=params.get("api_key"),
+            )
 
         raise NotImplementedError(f"未知操作: {action_id}")

@@ -292,6 +292,254 @@ def test_chatgpt_registration_service_generates_password_when_missing(monkeypatc
     assert captured["random_population"]
 
 
+def test_chatgpt_platform_register_delegates_to_registration_service_with_generic_mailbox_adapter(monkeypatch):
+    from platforms.chatgpt.plugin import ChatGPTPlatform
+    import platforms.chatgpt.register_v2 as legacy_register_module
+    import platforms.chatgpt.services.registration as registration_module
+
+    captured = {}
+
+    class FakeMailbox:
+        def __init__(self):
+            self.get_email_calls = 0
+
+        def get_email(self):
+            self.get_email_calls += 1
+            return MailboxAccount(email="fixed@example.com", account_id="mailbox-1")
+
+        def wait_for_code(self, account, keyword="", timeout=120, otp_sent_at=None, exclude_codes=None, **kwargs):
+            captured["wait_for_code"] = {
+                "email": account.email,
+                "account_id": account.account_id,
+                "keyword": keyword,
+                "timeout": timeout,
+                "otp_sent_at": otp_sent_at,
+                "exclude_codes": exclude_codes,
+            }
+            return "654321"
+
+    class FakeRegistrationEngine:
+        def __init__(self, email_service=None, proxy_url=None, callback_logger=None, max_retries=3):
+            captured["service_type"] = email_service.service_type.value
+            captured["proxy_url"] = proxy_url
+            captured["callback_logger"] = callback_logger
+            captured["max_retries"] = max_retries
+            self.email_service = email_service
+            self.email = None
+            self.password = None
+
+        def run(self):
+            captured["created_email"] = self.email_service.create_email()
+            captured["verification_code"] = self.email_service.get_verification_code(
+                timeout=45,
+                otp_sent_at="otp-sent-at",
+                exclude_codes={"used-code"},
+            )
+            captured["engine_email"] = self.email
+            captured["engine_password"] = self.password
+            return SimpleNamespace(
+                success=True,
+                email="fixed@example.com",
+                password=self.password,
+                account_id="chatgpt-account-id",
+                access_token="access-token",
+                refresh_token="refresh-token",
+                id_token="id-token",
+                session_token="session-token",
+                workspace_id="workspace-id",
+            )
+
+    class LegacyRegistrationEngine:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("legacy register_v2 path should not be used")
+
+    monkeypatch.setattr(registration_module, "RegistrationEngineV2", FakeRegistrationEngine)
+    monkeypatch.setattr(legacy_register_module, "RegistrationEngineV2", LegacyRegistrationEngine)
+
+    mailbox = FakeMailbox()
+    instance = ChatGPTPlatform(
+        RegisterConfig(
+            proxy="http://proxy.example.com",
+            extra={"register_max_retries": "5"},
+        ),
+        mailbox=mailbox,
+    )
+    instance._log_fn = lambda msg: None
+
+    result = instance.register("fixed@example.com", "secret")
+
+    assert result.email == "fixed@example.com"
+    assert result.password == "secret"
+    assert result.user_id == "chatgpt-account-id"
+    assert result.token == "access-token"
+    assert result.status == AccountStatus.REGISTERED
+    assert result.extra == {
+        "access_token": "access-token",
+        "refresh_token": "refresh-token",
+        "id_token": "id-token",
+        "session_token": "session-token",
+        "workspace_id": "workspace-id",
+    }
+    assert captured["service_type"] == "custom_provider"
+    assert captured["proxy_url"] == "http://proxy.example.com"
+    assert callable(captured["callback_logger"])
+    assert captured["max_retries"] == 5
+    assert captured["created_email"] == {
+        "email": "fixed@example.com",
+        "service_id": "mailbox-1",
+        "token": "",
+    }
+    assert captured["verification_code"] == "654321"
+    assert captured["engine_email"] == "fixed@example.com"
+    assert captured["engine_password"] == "secret"
+    assert captured["wait_for_code"] == {
+        "email": "fixed@example.com",
+        "account_id": "mailbox-1",
+        "keyword": "",
+        "timeout": 45,
+        "otp_sent_at": "otp-sent-at",
+        "exclude_codes": {"used-code"},
+    }
+    assert mailbox.get_email_calls == 1
+
+
+def test_chatgpt_platform_register_delegates_to_registration_service_with_tempmail_fallback(monkeypatch):
+    from core import base_mailbox as base_mailbox_module
+    from platforms.chatgpt.plugin import ChatGPTPlatform
+    import platforms.chatgpt.register_v2 as legacy_register_module
+    import platforms.chatgpt.services.registration as registration_module
+
+    captured = {}
+
+    class FakeTempMailLolMailbox:
+        def __init__(self, proxy=None):
+            captured["proxy"] = proxy
+            self.wait_calls = []
+
+        def get_email(self):
+            captured["get_email_called"] = True
+            return MailboxAccount(email="generated@tempmail.test", account_id="tm-1")
+
+        def wait_for_code(self, account, keyword="", timeout=120, otp_sent_at=None, exclude_codes=None, **kwargs):
+            self.wait_calls.append(
+                {
+                    "email": account.email,
+                    "account_id": account.account_id,
+                    "keyword": keyword,
+                    "timeout": timeout,
+                    "otp_sent_at": otp_sent_at,
+                    "exclude_codes": exclude_codes,
+                }
+            )
+            captured["wait_calls"] = list(self.wait_calls)
+            return "112233"
+
+    class FakeRegistrationEngine:
+        def __init__(self, email_service=None, proxy_url=None, callback_logger=None, max_retries=3):
+            captured["service_type"] = email_service.service_type.value
+            captured["proxy_url"] = proxy_url
+            captured["callback_logger"] = callback_logger
+            captured["max_retries"] = max_retries
+            self.email_service = email_service
+            self.email = None
+            self.password = None
+
+        def run(self):
+            captured["created_email"] = self.email_service.create_email()
+            captured["verification_code"] = self.email_service.get_verification_code(
+                timeout=30,
+                otp_sent_at="otp-sent-at",
+                exclude_codes={"old-code"},
+            )
+            captured["engine_email"] = self.email
+            captured["engine_password"] = self.password
+            return SimpleNamespace(
+                success=True,
+                email="generated@tempmail.test",
+                password="engine-generated-password",
+                account_id="chatgpt-account-id",
+                access_token="access-token",
+                refresh_token="refresh-token",
+                id_token="id-token",
+                session_token="session-token",
+                workspace_id="workspace-id",
+            )
+
+    class LegacyTempMailLolMailbox:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("legacy TempMailLolMailbox path should not be used")
+
+    class LegacyRegistrationEngine:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("legacy register_v2 path should not be used")
+
+    monkeypatch.setattr(registration_module, "TempMailLolMailbox", FakeTempMailLolMailbox)
+    monkeypatch.setattr(registration_module, "RegistrationEngineV2", FakeRegistrationEngine)
+    monkeypatch.setattr(base_mailbox_module, "TempMailLolMailbox", LegacyTempMailLolMailbox)
+    monkeypatch.setattr(legacy_register_module, "RegistrationEngineV2", LegacyRegistrationEngine)
+
+    instance = ChatGPTPlatform(RegisterConfig(proxy="http://proxy.example.com"))
+    instance._log_fn = lambda msg: None
+
+    result = instance.register(None, "secret")
+
+    assert result.email == "generated@tempmail.test"
+    assert result.password == "engine-generated-password"
+    assert result.user_id == "chatgpt-account-id"
+    assert result.token == "access-token"
+    assert result.status == AccountStatus.REGISTERED
+    assert result.extra == {
+        "access_token": "access-token",
+        "refresh_token": "refresh-token",
+        "id_token": "id-token",
+        "session_token": "session-token",
+        "workspace_id": "workspace-id",
+    }
+    assert captured["proxy"] == "http://proxy.example.com"
+    assert captured["service_type"] == "tempmail_lol"
+    assert captured["proxy_url"] == "http://proxy.example.com"
+    assert callable(captured["callback_logger"])
+    assert captured["max_retries"] == 3
+    assert captured["get_email_called"] is True
+    assert captured["created_email"] == {
+        "email": "generated@tempmail.test",
+        "service_id": "tm-1",
+        "token": "tm-1",
+    }
+    assert captured["verification_code"] == "112233"
+    assert captured["engine_email"] is None
+    assert captured["engine_password"] is None
+    assert captured["wait_calls"] == [
+        {
+            "email": "generated@tempmail.test",
+            "account_id": "tm-1",
+            "keyword": "",
+            "timeout": 30,
+            "otp_sent_at": "otp-sent-at",
+            "exclude_codes": {"old-code"},
+        }
+    ]
+
+
+def test_chatgpt_platform_check_valid_delegates_to_token_service(monkeypatch):
+    from platforms.chatgpt.plugin import ChatGPTPlatform
+
+    captured = {}
+    account = _make_chatgpt_account(extra={"access_token": "extra-access-token"})
+
+    class FakeTokenService:
+        def check_valid(self, delegated_account):
+            captured["account"] = delegated_account
+            return True
+
+    monkeypatch.setattr(ChatGPTPlatform, "_token_service", lambda self: FakeTokenService())
+
+    instance = ChatGPTPlatform(RegisterConfig(proxy="http://proxy.example.com"))
+
+    assert instance.check_valid(account) is True
+    assert captured == {"account": account}
+
+
 def test_chatgpt_token_service_check_valid_uses_subscription_status(monkeypatch):
     from platforms.chatgpt.services.token import ChatGPTTokenService
     import platforms.chatgpt.services.token as token_module
@@ -554,3 +802,92 @@ def test_chatgpt_external_sync_service_upload_tm_wraps_success(monkeypatch):
         "api_url": "https://tm.example.com",
         "api_key": "secret-key",
     }
+
+
+def test_chatgpt_platform_execute_action_delegates_to_services(monkeypatch):
+    from platforms.chatgpt.plugin import ChatGPTPlatform
+    import platforms.chatgpt.cpa_upload as legacy_upload_module
+
+    account = _make_chatgpt_account(
+        extra={
+            "access_token": "access-token",
+            "refresh_token": "refresh-token",
+        }
+    )
+    calls = []
+
+    class FakeTokenService:
+        def refresh_token(self, delegated_account):
+            calls.append(("refresh_token", delegated_account))
+            return {
+                "ok": True,
+                "data": {
+                    "access_token": "fresh-access-token",
+                    "refresh_token": "fresh-refresh-token",
+                },
+            }
+
+    class FakeBillingService:
+        def payment_link(self, delegated_account, plan="plus", country="US"):
+            calls.append(("payment_link", delegated_account, plan, country))
+            return {"ok": True, "data": {"url": f"https://{plan}.{country}.example.com"}}
+
+    class FakeExternalSyncService:
+        def upload_cpa(self, delegated_account, api_url=None, api_key=None):
+            calls.append(("upload_cpa", delegated_account, api_url, api_key))
+            return {"ok": True, "data": {"message": "CPA 上传成功"}}
+
+        def upload_tm(self, delegated_account, api_url=None, api_key=None):
+            calls.append(("upload_tm", delegated_account, api_url, api_key))
+            return {"ok": True, "data": {"message": "TM 上传成功"}}
+
+    monkeypatch.setattr(
+        legacy_upload_module,
+        "generate_token_json",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("legacy CPA upload path should not be used")),
+    )
+    monkeypatch.setattr(
+        legacy_upload_module,
+        "upload_to_cpa",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("legacy CPA upload path should not be used")),
+    )
+    monkeypatch.setattr(
+        legacy_upload_module,
+        "upload_to_team_manager",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("legacy TM upload path should not be used")),
+    )
+    monkeypatch.setattr(ChatGPTPlatform, "_token_service", lambda self: FakeTokenService())
+    monkeypatch.setattr(ChatGPTPlatform, "_billing_service", lambda self: FakeBillingService())
+    monkeypatch.setattr(ChatGPTPlatform, "_external_sync_service", lambda self: FakeExternalSyncService())
+
+    instance = ChatGPTPlatform(RegisterConfig())
+
+    refresh_result = instance.execute_action("refresh_token", account, {})
+    payment_result = instance.execute_action("payment_link", account, {"plan": "team", "country": "JP"})
+    upload_cpa_result = instance.execute_action(
+        "upload_cpa",
+        account,
+        {"api_url": "https://cpa.example.com", "api_key": "cpa-key"},
+    )
+    upload_tm_result = instance.execute_action(
+        "upload_tm",
+        account,
+        {"api_url": "https://tm.example.com", "api_key": "tm-key"},
+    )
+
+    assert refresh_result == {
+        "ok": True,
+        "data": {
+            "access_token": "fresh-access-token",
+            "refresh_token": "fresh-refresh-token",
+        },
+    }
+    assert payment_result == {"ok": True, "data": {"url": "https://team.JP.example.com"}}
+    assert upload_cpa_result == {"ok": True, "data": {"message": "CPA 上传成功"}}
+    assert upload_tm_result == {"ok": True, "data": {"message": "TM 上传成功"}}
+    assert calls == [
+        ("refresh_token", account),
+        ("payment_link", account, "team", "JP"),
+        ("upload_cpa", account, "https://cpa.example.com", "cpa-key"),
+        ("upload_tm", account, "https://tm.example.com", "tm-key"),
+    ]

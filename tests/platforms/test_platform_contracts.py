@@ -93,25 +93,50 @@ def test_grok_execute_action_failure_returns_standard_error(monkeypatch):
 
 def test_chatgpt_execute_action_failure_returns_standard_error(monkeypatch):
     module = importlib.import_module("platforms.chatgpt.cpa_upload")
-    monkeypatch.setattr(module, "generate_token_json", lambda account: {"token": "data"})
-    monkeypatch.setattr(module, "upload_to_cpa", lambda token_data, api_url=None, api_key=None: (False, "upload failed"))
+    monkeypatch.setattr(
+        module,
+        "generate_token_json",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("legacy upload path should not be used")),
+    )
+    monkeypatch.setattr(
+        module,
+        "upload_to_cpa",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("legacy upload path should not be used")),
+    )
+
+    captured = {}
+
+    class FakeExternalSyncService:
+        def upload_cpa(self, delegated_account, api_url=None, api_key=None):
+            captured["account"] = delegated_account
+            captured["api_url"] = api_url
+            captured["api_key"] = api_key
+            return {"ok": False, "error": "upload failed"}
+
+    monkeypatch.setattr(ChatGPTPlatform, "_external_sync_service", lambda self: FakeExternalSyncService())
     instance = ChatGPTPlatform(RegisterConfig())
+    account = Account(
+        platform="chatgpt",
+        email="user@example.com",
+        password="secret",
+        token="access-token",
+        extra={"access_token": "access-token"},
+    )
 
     result = instance.execute_action(
         "upload_cpa",
-        Account(
-            platform="chatgpt",
-            email="user@example.com",
-            password="secret",
-            token="access-token",
-            extra={"access_token": "access-token"},
-        ),
+        account,
         {"api_url": "https://example.com", "api_key": "secret"},
     )
 
     assert result["ok"] is False
     assert isinstance(result.get("error"), str)
     assert result["error"] == "upload failed"
+    assert captured == {
+        "account": account,
+        "api_url": "https://example.com",
+        "api_key": "secret",
+    }
 
 
 def test_kiro_execute_action_failure_returns_standard_error(monkeypatch):
