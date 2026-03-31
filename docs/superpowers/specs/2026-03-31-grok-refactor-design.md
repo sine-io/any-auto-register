@@ -1,5 +1,7 @@
 # Grok Platform Refactor Design
 
+> 状态（2026-03-31）：本设计已在 `feature/grok-refactor-spec` 分支落地。本文保留原始设计意图，同时在文末追加“实际落地结果 / 实现偏差 / 试点验收结论”。
+
 **Goal**
 
 把 `Grok` 平台从“插件入口同时承担注册编排、邮箱重试策略、验证码求解配置和外部同步动作”重构为“薄插件 + 明确 service 边界”的结构，并且保持对外行为不变。
@@ -280,6 +282,61 @@ api/integrations.py
 - `check_valid` 也有明确 service 落点
 - 专项测试存在并通过
 - `Grok` 可以成为第四个参考实现
+
+## Implementation Outcome
+
+当前分支的实际落地结果是：
+
+- 已新增 `platforms/grok/services/`
+  - `registration.py`
+  - `cookie.py`
+  - `sync.py`
+- `platforms/grok/plugin.py` 已收缩为薄插件入口
+  - `register()` 委托给 `GrokRegistrationService`
+  - `check_valid()` 委托给 `GrokCookieService`
+  - `execute_action("upload_grok2api")` 委托给 `GrokSyncService`
+- `GrokPlatform` 的 action id、返回 envelope、外部调用方式保持不变
+- 插件 action 路径之外的外部同步调用链保持原样
+  - `services.external_sync.py`
+  - `api.integrations.py`
+  - `services.grok2api_runtime.py`
+
+## Behavior Parity Confirmed
+
+本轮实现显式保留了以下关键语义：
+
+- 邮箱域名被拒绝时，只有在调用方没有传入固定 `email` 时才允许轮换 mailbox 重试
+- 每次 mailbox retry 都重新申请新的 mailbox account
+- 单次尝试里，`get_current_ids()`、OTP callback、最终邮箱日志继续复用同一个 mailbox account
+- 当调用方传固定 `email` 时，不会为了重试而偷偷切换 mailbox
+- 当没有 mailbox 时，仍向 `GrokRegister.register()` 传 `otp_callback=None`，保留手工 OTP fallback
+
+## Deviations Observed During Implementation
+
+相对设计阶段与 `Kiro` 试点，本轮记录到的偏差主要有三点：
+
+- `Grok` 的 service 包比 `Kiro` 更简单
+  - 不需要额外引入 token / bootstrap service
+  - `registration / cookie / sync` 三个边界就足够承接本轮职责
+- `platforms/grok/plugin.py` 当前直接导入 `platforms.grok.services`
+  - 这比 `Kiro` 的按需本地导入略更 eager
+  - 但目前没有发现它造成结构性问题，因此本轮接受这点轻微不对称
+- `GrokSyncService` 只覆盖插件 action 路径
+  - `services.external_sync.py` / `api.integrations.py` / `services.grok2api_runtime.py` 仍按原样保留
+  - 这是有意控制试点范围，而不是遗漏迁移
+
+## Pilot Assessment
+
+对“`Cursor / Trae / Kiro` 模式能否复制到 `Grok`”的结论是：
+
+- 可以，且整体复制是干净的
+- `Grok` 不需要重写 `core.py`，也不需要引入 `Kiro` 那样更重的 token service，就能把插件入口收缩成薄层
+- 当前剩余问题主要是：
+  - `core.py` 的浏览器自动化 / Turnstile / cookie 提取仍然高度耦合
+  - `plugin.py` 的 services 导入仍然略偏 eager
+  - 外部同步总线尚未统一到同一个 service 边界
+
+因此可以把 `Grok` 视为第四个参考实现；剩余问题属于轻微偏差与后续深拆候选，而不是模式失效。
 
 ## Non-Goals
 

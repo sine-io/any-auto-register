@@ -55,16 +55,18 @@
 - `Cursor`
 - `Trae`
 - `Kiro`
+- `Grok`
 
 下一轮优先治理建议：
 
-- `Grok`
 - `ChatGPT`
+- `Kiro` 深拆（如后续仍有收益）
 
 原因：
 
-- `Grok` 的浏览器自动化、验证码与平台细节复杂度最高
 - `ChatGPT` 能力面最广，插件入口仍承担较多 capability routing
+- `Kiro` 已完成 service 层治理，但 `core.py / switch.py` 仍有继续降耦空间
+- `Grok` 已完成第四个试点，剩余问题主要集中在 `core.py` 深拆与外部同步总线统一，不再属于“插件入口变薄”的首要目标
 
 ## Future Cleanup Candidates
 
@@ -123,26 +125,29 @@
 
 ### Grok
 
-**当前混杂点**
+**当前状态 / 剩余耦合点**
 
 - `platforms/grok/plugin.py`
-  - 同时负责：
-    - captcha 选择
-    - 邮箱重试策略
-    - 域名被拒绝时的重试决策
-    - action 包装
+  - 已收缩为薄插件入口
+  - `register / check_valid / upload_grok2api` 已委托给 services
+  - 当前直接 `from platforms.grok.services import ...`，导入时比 `Kiro` 的按需加载略更 eager
+- `platforms/grok/services/registration.py`
+  - 已承接 captcha 组装、邮箱重试、OTP callback、`Account` 构造
+  - 显式保持“固定 email 不轮换 mailbox”和“无 mailbox 时保留手工 OTP fallback”语义
+- `platforms/grok/services/sync.py`
+  - 只承接插件 action 路径的 `upload_grok2api`
+  - `services.external_sync.py` / `api.integrations.py` / `services.grok2api_runtime.py` 仍是独立外部同步调用链
 - `platforms/grok/core.py`
-  - 浏览器驱动、Turnstile 交互、页面推进、cookie 提取高度耦合
-  - 还包含明显的 Windows 平台细节（如 `ctypes.windll`）
+  - 仍同时负责浏览器驱动、Turnstile 交互、页面推进、cookie 提取
+  - 仍包含明显的 Windows 平台细节（如 `ctypes.windll`）
 
-**后续拆分候选**
+**后续清理候选**
 
-- `GrokRegistrationService`
-  - 编排邮箱/密码/重试
-- `GrokBrowserFlow`
-  - 专门处理页面自动化
-- `GrokAuthCookieExtractor`
-  - 专门处理 `sso` / `sso-rw` 提取
+- 继续深拆 `platforms/grok/core.py`
+  - 将浏览器流、Turnstile 处理、cookie 提取进一步分离
+- 如后续需要，再统一 `platforms/grok/services/__init__.py` / `plugin.py` 的按需导入
+  - 让 import-time coupling 更接近 `Kiro` 模式
+- 如果未来要治理外部集成总线，再把 `services.external_sync.py` / `api.integrations.py` / `services.grok2api_runtime.py` 纳入统一 sync service 边界
 
 ### Kiro
 
@@ -192,12 +197,12 @@
 
 剩余平台建议按这条顺序推进：
 
-1. `Grok`
-   - 浏览器自动化复杂度最高，且平台特定细节多
-2. `ChatGPT`
+1. `ChatGPT`
    - 功能面最广，插件入口仍承担较多 capability routing
-3. `Kiro` 深拆（如后续仍有收益）
+2. `Kiro` 深拆（如后续仍有收益）
    - 当前已完成 service 层治理，但 `core.py / switch.py` 仍可作为后续深拆候选
+3. `Grok` 深拆（仅在后续仍确认有收益时）
+   - 当前插件入口治理已完成，剩余工作主要是 `core.py` 浏览器自动化与外部同步总线的深拆
 
 ## Refactor Success Criteria
 
@@ -302,4 +307,47 @@
 
 - `Cursor / Trae` 模式复制到 `Kiro` 足够干净，可以把它视为第三个参考实现
 - 剩余问题属于兼容性保留和轻微基础设施不对称
+- 当前没有发现阻止后续复制到其他平台的结构性问题
+
+## Reference Trial: Grok
+
+`Grok` 已作为第四个参考实现完成试点，用来验证 `Cursor / Trae / Kiro` 的“薄插件 + services”模式能否继续复制到浏览器自动化更重、邮箱重试语义更敏感的平台。
+
+本次试点的实际结果是：
+
+- `platforms/grok/plugin.py`
+  - 收缩为薄插件入口
+  - `register / check_valid / upload_grok2api` 全部委托给 services
+- 新增 service 边界：
+  - `GrokRegistrationService`
+  - `GrokCookieService`
+  - `GrokSyncService`
+- 注册行为保持兼容：
+  - 保留邮箱域名被拒绝时的 mailbox retry 规则
+  - 保留“固定 email 不轮换 mailbox”的语义
+  - 保留“无 mailbox 时 `otp_callback=None`”的手工 OTP fallback 语义
+- 插件 action 之外的外部同步路径
+  - `services.external_sync.py`
+  - `api.integrations.py`
+  - `services.grok2api_runtime.py`
+  - 本轮按计划保持不变
+
+这说明：
+
+- `Cursor / Trae / Kiro` 的模式复制到 `Grok` 整体是干净的
+- 即使平台内部 `core.py` 仍然高度浏览器特化，也可以先稳定拆出外围 orchestration
+- 第四个试点继续证明：先收缩插件入口和 service 边界，比直接重写自动化页面流更稳妥
+
+## Grok Pilot Observations
+
+`Grok` 的复制整体顺利，但实现中也记录了三点轻微偏差：
+
+- 相比 `Kiro`，`Grok` 的 service 包更简单；这轮不需要额外的 token / bootstrap service
+- `platforms/grok/plugin.py` 当前直接导入 `platforms.grok.services`，比 `Kiro` 的按需本地导入略更 eager，但目前可接受
+- `GrokSyncService` 只承接插件 action 路径；`services.external_sync.py` / `api.integrations.py` / `services.grok2api_runtime.py` 刻意留在试点范围之外
+
+结论：
+
+- `Cursor / Trae / Kiro` 模式复制到 `Grok` 足够干净，可以把它视为第四个参考实现
+- 剩余问题属于轻微实现偏差和明确延期范围，而不是模式本身失效
 - 当前没有发现阻止后续复制到其他平台的结构性问题
