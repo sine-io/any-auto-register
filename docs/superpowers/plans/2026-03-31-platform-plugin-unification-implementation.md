@@ -105,6 +105,7 @@ git commit -m "test: add platform unification coverage"
 - Modify: `platforms/kiro/plugin.py`
 - Modify: `platforms/grok/plugin.py`
 - Modify: `platforms/chatgpt/plugin.py`
+- Modify: `tests/platforms/test_grok_services.py`
 - Test: `tests/platforms/test_platform_unification.py`
 
 - [ ] **Step 1: Align helper naming and ordering**
@@ -125,6 +126,9 @@ Requirements:
 Requirements:
 - 不再在 `plugin.py` 顶层直接依赖整包 eager import
 - helper 内改为局部导入，或与最终 `services/__init__.py` 规则相匹配
+- 同步更新 `tests/platforms/test_grok_services.py`
+  - 让 Grok delegation tests 不再依赖 `plugin_module.GrokRegistrationService` 这类顶层符号存在
+  - 避免统一收尾本身把既有 Grok 服务/委托测试弄坏
 
 - [ ] **Step 3: Run focused tests**
 
@@ -227,6 +231,7 @@ pytest tests/platforms/test_trae_services.py -q
 pytest tests/platforms/test_kiro_services.py -q
 pytest tests/platforms/test_grok_services.py -q
 pytest tests/platforms/test_chatgpt_services.py -q
+pytest tests/test_risk_hardening.py -q
 python - <<'PY'
 from core.registry import load_all, list_platforms
 load_all()
