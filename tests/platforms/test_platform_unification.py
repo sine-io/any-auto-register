@@ -6,8 +6,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 HEAVY_PLATFORMS = ("kiro", "grok", "chatgpt")
 LIGHT_PLATFORMS = ("cursor", "trae")
-LAZY_EXPORT_PLATFORMS = ("kiro", "chatgpt")
-DIRECT_EXPORT_PLATFORMS = ("cursor", "trae", "grok")
+LAZY_EXPORT_PLATFORMS = ("kiro", "grok", "chatgpt")
+DIRECT_EXPORT_PLATFORMS = ("cursor", "trae")
 
 PLATFORM_SPECS = {
     "cursor": {
