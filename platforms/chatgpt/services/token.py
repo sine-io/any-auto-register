@@ -60,15 +60,15 @@ class TokenRefreshManager:
 
 
 def _build_account_adapter(account) -> SimpleNamespace:
-    extra = account.extra or {}
+    extra = getattr(account, "extra", None) or {}
     return SimpleNamespace(
-        email=account.email,
-        access_token=extra.get("access_token") or account.token,
-        refresh_token=extra.get("refresh_token", ""),
-        id_token=extra.get("id_token", ""),
-        session_token=extra.get("session_token", ""),
-        client_id=extra.get("client_id", OAUTH_CLIENT_ID),
-        cookies=extra.get("cookies", ""),
+        email=getattr(account, "email", ""),
+        access_token=getattr(account, "access_token", None) or extra.get("access_token") or getattr(account, "token", ""),
+        refresh_token=getattr(account, "refresh_token", None) or extra.get("refresh_token", ""),
+        id_token=getattr(account, "id_token", None) or extra.get("id_token", ""),
+        session_token=getattr(account, "session_token", None) or extra.get("session_token", ""),
+        client_id=getattr(account, "client_id", None) or extra.get("client_id", OAUTH_CLIENT_ID),
+        cookies=getattr(account, "cookies", None) or extra.get("cookies", ""),
     )
 
 
@@ -76,19 +76,25 @@ class ChatGPTTokenService:
     def __init__(self, config: RegisterConfig | None = None):
         self.config = config or RegisterConfig()
 
+    def refresh_account_raw(self, account, proxy=None):
+        manager = TokenRefreshManager(proxy_url=self.config.proxy if proxy is None else proxy)
+        return manager.refresh_account(_build_account_adapter(account))
+
+    def get_subscription_status_raw(self, account, proxy=None):
+        return check_subscription_status(
+            _build_account_adapter(account),
+            proxy=self.config.proxy if proxy is None else proxy,
+        )
+
     def check_valid(self, account) -> bool:
         try:
-            status = check_subscription_status(
-                _build_account_adapter(account),
-                proxy=self.config.proxy,
-            )
+            status = self.get_subscription_status_raw(account)
             return status not in _INVALID_SUBSCRIPTION_STATUSES
         except Exception:
             return False
 
     def refresh_token(self, account) -> dict:
-        manager = TokenRefreshManager(proxy_url=self.config.proxy)
-        result = manager.refresh_account(_build_account_adapter(account))
+        result = self.refresh_account_raw(account)
         if result.success:
             return BasePlatform._action_success(
                 {

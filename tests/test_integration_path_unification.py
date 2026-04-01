@@ -563,3 +563,248 @@ def test_integrations_backfill_routes_grok_through_grok_sync_service_raw_method(
         }
     ]
     assert legacy_calls == []
+
+
+def test_chatgpt_token_service_refresh_account_raw_uses_request_proxy_and_duck_typed_account(monkeypatch):
+    token_service_module = _fresh_import("platforms.chatgpt.services.token")
+
+    captured = {}
+
+    class FakeTokenRefreshManager:
+        def __init__(self, proxy_url=None):
+            captured["proxy_url"] = proxy_url
+
+        def refresh_account(self, account):
+            captured["email"] = account.email
+            captured["access_token"] = account.access_token
+            captured["refresh_token"] = account.refresh_token
+            captured["id_token"] = account.id_token
+            captured["session_token"] = account.session_token
+            captured["client_id"] = account.client_id
+            captured["cookies"] = account.cookies
+            return SimpleNamespace(
+                success=True,
+                access_token="fresh-access-token",
+                refresh_token="fresh-refresh-token",
+                error_message="",
+            )
+
+    monkeypatch.setattr(token_service_module, "TokenRefreshManager", FakeTokenRefreshManager)
+
+    service = token_service_module.ChatGPTTokenService(
+        token_service_module.RegisterConfig(proxy="http://config-proxy.example.com")
+    )
+    account = SimpleNamespace(
+        email="user@example.com",
+        access_token="duck-access-token",
+        refresh_token="duck-refresh-token",
+        id_token="duck-id-token",
+        session_token="duck-session-token",
+        client_id="duck-client-id",
+        cookies="oai-did=device-id; session=abc",
+    )
+
+    result = service.refresh_account_raw(account, proxy="http://request-proxy.example.com")
+
+    assert result.success is True
+    assert captured == {
+        "proxy_url": "http://request-proxy.example.com",
+        "email": "user@example.com",
+        "access_token": "duck-access-token",
+        "refresh_token": "duck-refresh-token",
+        "id_token": "duck-id-token",
+        "session_token": "duck-session-token",
+        "client_id": "duck-client-id",
+        "cookies": "oai-did=device-id; session=abc",
+    }
+
+
+def test_chatgpt_token_service_get_subscription_status_raw_uses_proxy_override(monkeypatch):
+    token_service_module = _fresh_import("platforms.chatgpt.services.token")
+
+    captured = {}
+
+    def fake_check_subscription_status(account, proxy=None):
+        captured["email"] = account.email
+        captured["access_token"] = account.access_token
+        captured["cookies"] = account.cookies
+        captured["proxy"] = proxy
+        return "team"
+
+    monkeypatch.setattr(token_service_module, "check_subscription_status", fake_check_subscription_status)
+
+    service = token_service_module.ChatGPTTokenService(
+        token_service_module.RegisterConfig(proxy="http://config-proxy.example.com")
+    )
+    account = SimpleNamespace(
+        email="user@example.com",
+        access_token="duck-access-token",
+        cookies="oai-did=device-id; session=abc",
+    )
+
+    result = service.get_subscription_status_raw(account, proxy="http://request-proxy.example.com")
+
+    assert result == "team"
+    assert captured == {
+        "email": "user@example.com",
+        "access_token": "duck-access-token",
+        "cookies": "oai-did=device-id; session=abc",
+        "proxy": "http://request-proxy.example.com",
+    }
+
+
+def test_chatgpt_billing_service_generate_payment_link_raw_preserves_team_params(monkeypatch):
+    billing_service_module = _fresh_import("platforms.chatgpt.services.billing")
+
+    captured = {}
+
+    def fake_generate_team_link(
+        account,
+        workspace_name="MyTeam",
+        price_interval="month",
+        seat_quantity=5,
+        proxy=None,
+        country="SG",
+    ):
+        captured["email"] = account.email
+        captured["access_token"] = account.access_token
+        captured["cookies"] = account.cookies
+        captured["workspace_name"] = workspace_name
+        captured["price_interval"] = price_interval
+        captured["seat_quantity"] = seat_quantity
+        captured["proxy"] = proxy
+        captured["country"] = country
+        return "https://service.example.com/team-link"
+
+    monkeypatch.setattr(billing_service_module, "generate_team_link", fake_generate_team_link)
+
+    service = billing_service_module.ChatGPTBillingService(
+        billing_service_module.RegisterConfig(proxy="http://config-proxy.example.com")
+    )
+    account = SimpleNamespace(
+        email="user@example.com",
+        access_token="duck-access-token",
+        cookies="oai-did=device-id; session=abc",
+    )
+
+    result = service.generate_payment_link_raw(
+        account,
+        plan="team",
+        country="JP",
+        proxy="http://request-proxy.example.com",
+        workspace_name="My Squad",
+        seat_quantity=8,
+        price_interval="year",
+    )
+
+    assert result == "https://service.example.com/team-link"
+    assert captured == {
+        "email": "user@example.com",
+        "access_token": "duck-access-token",
+        "cookies": "oai-did=device-id; session=abc",
+        "workspace_name": "My Squad",
+        "price_interval": "year",
+        "seat_quantity": 8,
+        "proxy": "http://request-proxy.example.com",
+        "country": "JP",
+    }
+
+
+def test_chatgpt_external_sync_service_upload_cpa_raw_returns_tuple(monkeypatch):
+    sync_service_module = _fresh_import("platforms.chatgpt.services.external_sync")
+
+    captured = {}
+
+    def fake_generate_token_json(account):
+        captured["email"] = account.email
+        captured["access_token"] = account.access_token
+        captured["refresh_token"] = account.refresh_token
+        captured["id_token"] = account.id_token
+        return {"email": account.email, "access_token": account.access_token}
+
+    def fake_upload_to_cpa(token_data, api_url=None, api_key=None):
+        captured["token_data"] = token_data
+        captured["api_url"] = api_url
+        captured["api_key"] = api_key
+        return True, "CPA raw 上传成功"
+
+    monkeypatch.setattr(sync_service_module, "generate_token_json", fake_generate_token_json)
+    monkeypatch.setattr(sync_service_module, "upload_to_cpa", fake_upload_to_cpa)
+
+    service = sync_service_module.ChatGPTExternalSyncService()
+    account = SimpleNamespace(
+        email="user@example.com",
+        access_token="duck-access-token",
+        refresh_token="duck-refresh-token",
+        id_token="duck-id-token",
+    )
+
+    result = service.upload_cpa_raw(
+        account,
+        api_url="https://cpa.example.com",
+        api_key="secret-key",
+    )
+
+    assert result == (True, "CPA raw 上传成功")
+    assert captured == {
+        "email": "user@example.com",
+        "access_token": "duck-access-token",
+        "refresh_token": "duck-refresh-token",
+        "id_token": "duck-id-token",
+        "token_data": {
+            "email": "user@example.com",
+            "access_token": "duck-access-token",
+        },
+        "api_url": "https://cpa.example.com",
+        "api_key": "secret-key",
+    }
+
+
+def test_grok_sync_service_upload_grok2api_raw_uses_explicit_args(monkeypatch):
+    grok_sync_module = _fresh_import("platforms.grok.services.sync")
+
+    captured = {}
+
+    def fake_upload_to_grok2api(account, api_url=None, app_key=None):
+        captured["account"] = account
+        captured["api_url"] = api_url
+        captured["app_key"] = app_key
+        return True, "raw upload ok"
+
+    monkeypatch.setattr(grok_sync_module, "upload_to_grok2api", fake_upload_to_grok2api)
+
+    service = grok_sync_module.GrokSyncService()
+    account = SimpleNamespace(email="grok@example.com", extra={"sso": "token"})
+
+    result = service.upload_grok2api_raw(
+        account,
+        api_url="https://grok2api.example.com",
+        app_key="service-app-key",
+    )
+
+    assert result == (True, "raw upload ok")
+    assert captured == {
+        "account": account,
+        "api_url": "https://grok2api.example.com",
+        "app_key": "service-app-key",
+    }
+
+
+def test_grok_sync_service_upload_grok2api_raw_uses_lower_layer_fallback_when_args_omitted(monkeypatch):
+    grok_sync_module = _fresh_import("platforms.grok.services.sync")
+
+    captured = {}
+
+    def fake_upload_to_grok2api(account):
+        captured["account"] = account
+        return True, "fallback upload ok"
+
+    monkeypatch.setattr(grok_sync_module, "upload_to_grok2api", fake_upload_to_grok2api)
+
+    service = grok_sync_module.GrokSyncService()
+    account = SimpleNamespace(email="grok@example.com", extra={"sso": "token"})
+
+    result = service.upload_grok2api_raw(account)
+
+    assert result == (True, "fallback upload ok")
+    assert captured == {"account": account}

@@ -23,22 +23,25 @@ def upload_to_team_manager(account, api_url=None, api_key=None):
 
 
 def _build_account_adapter(account) -> SimpleNamespace:
-    extra = account.extra or {}
+    extra = getattr(account, "extra", None) or {}
     return SimpleNamespace(
-        email=account.email,
-        access_token=extra.get("access_token") or account.token,
-        refresh_token=extra.get("refresh_token", ""),
-        id_token=extra.get("id_token", ""),
-        session_token=extra.get("session_token", ""),
-        client_id=extra.get("client_id", OAUTH_CLIENT_ID),
-        cookies=extra.get("cookies", ""),
+        email=getattr(account, "email", ""),
+        access_token=getattr(account, "access_token", None) or extra.get("access_token") or getattr(account, "token", ""),
+        refresh_token=getattr(account, "refresh_token", None) or extra.get("refresh_token", ""),
+        id_token=getattr(account, "id_token", None) or extra.get("id_token", ""),
+        session_token=getattr(account, "session_token", None) or extra.get("session_token", ""),
+        client_id=getattr(account, "client_id", None) or extra.get("client_id", OAUTH_CLIENT_ID),
+        cookies=getattr(account, "cookies", None) or extra.get("cookies", ""),
     )
 
 
 class ChatGPTExternalSyncService:
-    def upload_cpa(self, account, api_url: str | None = None, api_key: str | None = None) -> dict:
+    def upload_cpa_raw(self, account, api_url: str | None = None, api_key: str | None = None) -> tuple[bool, str]:
         token_data = generate_token_json(_build_account_adapter(account))
-        ok, msg = upload_to_cpa(token_data, api_url=api_url, api_key=api_key)
+        return upload_to_cpa(token_data, api_url=api_url, api_key=api_key)
+
+    def upload_cpa(self, account, api_url: str | None = None, api_key: str | None = None) -> dict:
+        ok, msg = self.upload_cpa_raw(account, api_url=api_url, api_key=api_key)
         if ok:
             return BasePlatform._action_success(message=msg)
         return BasePlatform._action_error(msg)
