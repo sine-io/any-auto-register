@@ -52,9 +52,8 @@ def refresh_token(account_id: int, proxy: Optional[str] = None,
     acc = _get_account(account_id, session)
     codex_acc = _to_codex_account(acc)
 
-    from platforms.chatgpt.token_refresh import TokenRefreshManager
-    manager = TokenRefreshManager(proxy_url=proxy)
-    result = manager.refresh_account(codex_acc)
+    from platforms.chatgpt.services.token import ChatGPTTokenService
+    result = ChatGPTTokenService().refresh_account_raw(codex_acc, proxy=proxy)
 
     if result.success:
         extra = acc.get_extra()
@@ -87,15 +86,16 @@ def generate_payment_link(account_id: int, req: PaymentReq,
     acc = _get_account(account_id, session)
     codex_acc = _to_codex_account(acc)
 
-    from platforms.chatgpt.payment import generate_plus_link, generate_team_link
-    if req.plan == "plus":
-        url = generate_plus_link(codex_acc, proxy=req.proxy, country=req.country)
-    else:
-        url = generate_team_link(
-            codex_acc, workspace_name=req.workspace_name,
-            price_interval=req.price_interval, seat_quantity=req.seat_quantity,
-            proxy=req.proxy, country=req.country
-        )
+    from platforms.chatgpt.services.billing import ChatGPTBillingService
+    url = ChatGPTBillingService().generate_payment_link_raw(
+        codex_acc,
+        plan=req.plan,
+        country=req.country,
+        proxy=req.proxy,
+        workspace_name=req.workspace_name,
+        seat_quantity=req.seat_quantity,
+        price_interval=req.price_interval,
+    )
     return {"url": url, "plan": req.plan, "country": req.country}
 
 
@@ -106,8 +106,8 @@ def check_subscription(account_id: int, proxy: Optional[str] = None,
     acc = _get_account(account_id, session)
     codex_acc = _to_codex_account(acc)
 
-    from platforms.chatgpt.payment import check_subscription_status
-    status = check_subscription_status(codex_acc, proxy=proxy)
+    from platforms.chatgpt.services.token import ChatGPTTokenService
+    status = ChatGPTTokenService().get_subscription_status_raw(codex_acc, proxy=proxy)
 
     # 更新账号状态
     acc.status = status
@@ -130,7 +130,10 @@ def upload_cpa(account_id: int, req: CpaUploadReq,
     acc = _get_account(account_id, session)
     codex_acc = _to_codex_account(acc)
 
-    from platforms.chatgpt.cpa_upload import upload_to_cpa, generate_token_json
-    token_data = generate_token_json(codex_acc)
-    ok, msg = upload_to_cpa(token_data, api_url=req.api_url, api_key=req.api_key)
+    from platforms.chatgpt.services.external_sync import ChatGPTExternalSyncService
+    ok, msg = ChatGPTExternalSyncService().upload_cpa_raw(
+        codex_acc,
+        api_url=req.api_url,
+        api_key=req.api_key,
+    )
     return {"ok": ok, "message": msg}

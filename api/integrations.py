@@ -89,11 +89,11 @@ def backfill_integrations(body: BackfillRequest):
             results = []
             if row.platform == "grok":
                 from core.config_store import config_store
-                from platforms.grok.grok2api_upload import upload_to_grok2api
+                from platforms.grok.services.sync import GrokSyncService
 
                 api_url = str(config_store.get("grok2api_url", "") or "").strip() or "http://127.0.0.1:8011"
                 app_key = str(config_store.get("grok2api_app_key", "") or "").strip() or "grok2api"
-                ok, msg = upload_to_grok2api(account, api_url=api_url, app_key=app_key)
+                ok, msg = GrokSyncService().upload_grok2api_raw(account, api_url=api_url, app_key=app_key)
                 results.append({"name": "grok2api", "ok": ok, "msg": msg})
 
             elif row.platform == "kiro":

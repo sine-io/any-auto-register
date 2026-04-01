@@ -34,14 +34,14 @@ def sync_account(account) -> list[dict[str, Any]]:
         grok2api_url = str(config_store.get("grok2api_url", "") or "").strip()
         if grok2api_url:
             from services.grok2api_runtime import ensure_grok2api_ready
-            from platforms.grok.grok2api_upload import upload_to_grok2api
+            from platforms.grok.services.sync import GrokSyncService
 
             ready, ready_msg = ensure_grok2api_ready()
             if not ready:
                 results.append({"name": "grok2api", "ok": False, "msg": ready_msg})
                 return results
 
-            ok, msg = upload_to_grok2api(account)
+            ok, msg = GrokSyncService().upload_grok2api_raw(account)
             results.append({"name": "grok2api", "ok": ok, "msg": msg})
 
     elif platform == "kiro":
