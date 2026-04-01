@@ -125,9 +125,11 @@
 - `ChatGPTTokenService`
   - token 有效性和刷新
   - 额外提供可复用的原始订阅状态查询入口，供 `/subscription` route 使用
+  - 保留当前每次请求可覆盖的 `proxy` 语义
 - `ChatGPTBillingService`
   - 支付链接生成
   - 提供可复用的原始链接生成入口，保留 Team 路径需要的
+    - `proxy`
     - `workspace_name`
     - `seat_quantity`
     - `price_interval`
@@ -154,8 +156,8 @@
 
 ```text
 api/chatgpt.py
-  -> ChatGPTTokenService.refresh_account / get_subscription_status
-  -> ChatGPTBillingService.generate_payment_link
+  -> ChatGPTTokenService.refresh_account_raw / get_subscription_status_raw
+  -> ChatGPTBillingService.generate_payment_link_raw
   -> ChatGPTExternalSyncService.upload_cpa_raw
 ```
 
@@ -188,11 +190,11 @@ api/integrations.py
 
 - `ChatGPTTokenService`
   - `refresh_token(account) -> dict` 给插件 action 用
-  - `refresh_account(account) -> TokenRefreshResult` 给 API 用
-  - `get_subscription_status(account) -> str` 给 `/subscription` 用
+  - `refresh_account_raw(account, proxy=None) -> TokenRefreshResult` 给 API 用
+  - `get_subscription_status_raw(account, proxy=None) -> str` 给 `/subscription` 用
 - `ChatGPTBillingService`
   - `payment_link(...) -> dict` 给插件 action 用
-  - `generate_payment_link(...) -> str` 给 API 用
+  - `generate_payment_link_raw(...) -> str` 给 API 用
 - `ChatGPTExternalSyncService`
   - `upload_cpa(...) -> dict` 给插件 action 用
   - `upload_cpa_raw(...) -> tuple[bool, str]` 给 API 用
@@ -248,10 +250,11 @@ api/integrations.py
 - `ChatGPTBillingService` 提供单一 raw 方法：
 
 ```python
-generate_payment_link(
+generate_payment_link_raw(
     account,
     plan: str,
     country: str,
+    proxy: str | None = None,
     workspace_name: str = "MyTeam",
     seat_quantity: int = 5,
     price_interval: str = "month",
@@ -261,12 +264,26 @@ generate_payment_link(
 - 当 `plan == "plus"` 时，只使用：
   - `account`
   - `country`
+  - `proxy`
 - 当 `plan == "team"` 时，继续使用：
+  - `proxy`
   - `workspace_name`
   - `seat_quantity`
   - `price_interval`
 
 插件 action 路径仍然可以保留更薄的包装入口，但旁路 API 复用统一走这个 raw 方法。
+
+## Raw Token API Shape
+
+为了保留当前 `/refresh-token` 与 `/subscription` 的 per-request proxy 语义，本轮明确：
+
+- `ChatGPTTokenService.refresh_account_raw(account, proxy=None) -> TokenRefreshResult`
+- `ChatGPTTokenService.get_subscription_status_raw(account, proxy=None) -> str`
+
+插件 action 路径继续保留较薄的包装入口：
+
+- `refresh_token(account) -> dict`
+- `check_valid(account) -> bool`
 
 ## What Stays Unchanged
 
