@@ -98,6 +98,12 @@
 
 目标：
 - `api/chatgpt.py` 改为复用这些 service，而不是直接导入 legacy 模块
+- 本轮只覆盖当前已经存在的 endpoint：
+  - `/refresh-token`
+  - `/payment-link`
+  - `/subscription`
+  - `/upload-cpa`
+- 本轮**不新增** `/upload-tm` API route；`upload_tm` 仍仅作为插件 action 能力存在
 
 ### Grok
 
@@ -118,10 +124,16 @@
   - 业务动作通过 service 调用
 - `ChatGPTTokenService`
   - token 有效性和刷新
+  - 额外提供可复用的原始订阅状态查询入口，供 `/subscription` route 使用
 - `ChatGPTBillingService`
   - 支付链接生成
+  - 提供可复用的原始链接生成入口，保留 Team 路径需要的
+    - `workspace_name`
+    - `seat_quantity`
+    - `price_interval`
 - `ChatGPTExternalSyncService`
   - CPA / Team Manager 同步
+  - 提供插件 action 包装入口，以及可供 API 复用的原始同步入口
 
 ### Grok side
 
@@ -142,9 +154,9 @@
 
 ```text
 api/chatgpt.py
-  -> ChatGPTTokenService.check_valid / refresh_token
-  -> ChatGPTBillingService.payment_link
-  -> ChatGPTExternalSyncService.upload_cpa / upload_tm
+  -> ChatGPTTokenService.refresh_account / get_subscription_status
+  -> ChatGPTBillingService.generate_payment_link
+  -> ChatGPTExternalSyncService.upload_cpa_raw
 ```
 
 ### Grok auto sync path
@@ -152,7 +164,7 @@ api/chatgpt.py
 ```text
 services.external_sync.sync_account
   -> ensure_grok2api_ready
-  -> GrokSyncService.upload_grok2api
+  -> GrokSyncService.upload_grok2api_raw
 ```
 
 ### Grok backfill path
@@ -160,8 +172,48 @@ services.external_sync.sync_account
 ```text
 api/integrations.py
   -> ensure_grok2api_ready
-  -> GrokSyncService.upload_grok2api
+  -> GrokSyncService.upload_grok2api_raw
 ```
+
+## Service Reuse Rule For Side Paths
+
+为了避免让 API / backfill / auto-sync 调用方去手动拆插件 action envelope，本轮统一采用这条规则：
+
+- **插件 action 路径**
+  - service 暴露 `{"ok","data","error"}` 形态的方法
+- **旁路调用链**
+  - service 额外暴露“raw”入口，返回更贴近调用方当前契约的结果
+
+例如：
+
+- `ChatGPTTokenService`
+  - `refresh_token(account) -> dict` 给插件 action 用
+  - `refresh_account(account) -> TokenRefreshResult` 给 API 用
+  - `get_subscription_status(account) -> str` 给 `/subscription` 用
+- `ChatGPTBillingService`
+  - `payment_link(...) -> dict` 给插件 action 用
+  - `generate_payment_link(...) -> str` 给 API 用
+- `ChatGPTExternalSyncService`
+  - `upload_cpa(...) -> dict` 给插件 action 用
+  - `upload_cpa_raw(...) -> tuple[bool, str]` 给 API 用
+- `GrokSyncService`
+  - `upload_grok2api(account) -> dict` 给插件 action 用
+  - `upload_grok2api_raw(account, api_url=None, app_key=None) -> tuple[bool, str]` 给 auto-sync / backfill 用
+
+## Fallback Ownership Rule
+
+对于 Grok 的旁路调用链，本轮明确采用：
+
+- runtime readiness 仍由调用方负责：
+  - `services.external_sync.py`
+  - `api/integrations.py`
+  继续先调用 `ensure_grok2api_ready()`
+- `api_url / app_key` 的 fallback/default 决策继续保留在调用方现有位置
+- `GrokSyncService.upload_grok2api_raw(...)` 只负责：
+  - 调用 `upload_to_grok2api`
+  - 统一返回 `(ok, msg)`
+
+这样可以避免本轮把 “平台 service 收口” 扩大成 “runtime 配置策略统一”。 
 
 ## What Stays Unchanged
 
