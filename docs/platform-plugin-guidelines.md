@@ -165,6 +165,70 @@
 - 把业务编排重新内联回 `plugin.py`
 - helper 顺序或插件结构偏离统一契约
 
+### Final Side-Path Boundary Rule
+
+平台 service 不只服务 `plugin.py`，也可以被关键旁路入口复用；但复用边界必须稳定：
+
+- **service 负责业务动作**
+  - 平台 service 负责平台语义本身，例如 token 刷新、支付链接生成、外部同步
+  - 旁路调用方可以复用 service 的 raw 方法，避免重新直连 legacy 模块
+- **runtime readiness 仍由调用方负责**
+  - 运行环境检查、启动辅助、外部进程 readiness 不属于平台 service
+  - 调用方在进入 service 前先做 readiness 判断，service 不吞并这一层责任
+
+当前已经固化的最终旁路复用边界如下。
+
+#### ChatGPT API side paths
+
+`api/chatgpt.py` 现在复用 `ChatGPT` 平台 service 的 raw 方法：
+
+- `POST /chatgpt/{account_id}/refresh-token`
+  - `ChatGPTTokenService.refresh_account_raw(...)`
+- `POST /chatgpt/{account_id}/payment-link`
+  - `ChatGPTBillingService.generate_payment_link_raw(...)`
+- `GET /chatgpt/{account_id}/subscription`
+  - `ChatGPTTokenService.get_subscription_status_raw(...)`
+- `POST /chatgpt/{account_id}/upload-cpa`
+  - `ChatGPTExternalSyncService.upload_cpa_raw(...)`
+
+同时明确：
+
+- 本轮**没有新增** `/upload-tm` API route
+- Team Manager 上传仍保留为 service / plugin action 能力，不扩展成新的 API 旁路
+- `api/actions.py`、`api/tasks.py` 等并行 direct-call 主链不在本轮 side-path 收口范围内，文档与实现都应继续显式标注这一点
+
+#### Grok side paths
+
+`Grok` 当前已经固化为由 `GrokSyncService` 统一插件 action 与关键旁路同步动作：
+
+- `services.external_sync.py`
+  - Grok auto-sync 分支执行
+    - `ensure_grok2api_ready()`
+    - `GrokSyncService.upload_grok2api_raw(account)`
+- `api/integrations.py`
+  - Grok backfill 分支执行
+    - `ensure_grok2api_ready()`
+    - `GrokSyncService.upload_grok2api_raw(account, api_url=..., app_key=...)`
+
+这条规则明确区分：
+
+- runtime readiness 是 caller-owned
+- 具体 Grok 同步动作封装是 `GrokSyncService` owned
+
+#### Grok fallback ownership
+
+`GrokSyncService.upload_grok2api_raw(...)` 统一了调用入口，但**没有**统一 fallback ownership：
+
+- auto-sync
+  - 继续不显式传入 `api_url / app_key`
+  - 继续依赖更下层 `upload_to_grok2api(...)` / config fallback
+- backfill
+  - 继续在 API 层显式计算默认 `api_url / app_key`
+  - 当前默认值仍是 `http://127.0.0.1:8011` 与 `grok2api`
+  - 再把这些值传给 `GrokSyncService.upload_grok2api_raw(...)`
+
+换句话说，本轮统一的是 **service reuse boundary**，不是把所有 fallback 策略都上收到同一层。
+
 ## Reference Classification
 
 当前 5 个参考实现的最终分类如下：

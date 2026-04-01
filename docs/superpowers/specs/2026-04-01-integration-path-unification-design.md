@@ -115,6 +115,49 @@
 - `api/integrations.py` 的 Grok backfill 分支复用 `GrokSyncService`
 - `services.grok2api_runtime.py` 保留为 runtime 检查层，不并入平台 service
 
+## Final Implemented Outcome
+
+截至本分支最终状态，本设计已经按下面的边界落地。
+
+### ChatGPT final side-path reuse
+
+`api/chatgpt.py` 现在已经统一改为复用 `ChatGPT` 平台 service 的 raw 方法：
+
+- `POST /chatgpt/{account_id}/refresh-token`
+  - `ChatGPTTokenService.refresh_account_raw(...)`
+- `POST /chatgpt/{account_id}/payment-link`
+  - `ChatGPTBillingService.generate_payment_link_raw(...)`
+- `GET /chatgpt/{account_id}/subscription`
+  - `ChatGPTTokenService.get_subscription_status_raw(...)`
+- `POST /chatgpt/{account_id}/upload-cpa`
+  - `ChatGPTExternalSyncService.upload_cpa_raw(...)`
+
+这意味着 `api/chatgpt.py` 不再为这些入口直接走旧的 `token_refresh / payment / cpa_upload` 调用面。
+
+同时明确保留的边界：
+
+- 本轮没有新增 `/upload-tm` API route
+- Team Manager 上传仍然只保留在 service / plugin action 能力内
+- `api/actions.py`、`api/tasks.py` 等并行 direct-call 主路径不在本轮 side-path 收口范围内
+
+### Grok final side-path reuse
+
+`Grok` 的关键旁路路径现在都通过 `GrokSyncService.upload_grok2api_raw(...)` 复用同一平台同步 service：
+
+- auto-sync
+  - `services.external_sync.py`
+  - 调用顺序：
+    - `ensure_grok2api_ready()`
+    - `GrokSyncService.upload_grok2api_raw(account)`
+- backfill
+  - `api/integrations.py`
+  - 调用顺序：
+    - `ensure_grok2api_ready()`
+    - API 层显式计算默认 `api_url=http://127.0.0.1:8011`、`app_key=grok2api`
+    - `GrokSyncService.upload_grok2api_raw(account, api_url=..., app_key=...)`
+
+这次收口统一的是同步动作入口，不是把 runtime 层吞进平台 service。
+
 ## Responsibility Split
 
 ### ChatGPT side
@@ -141,16 +184,18 @@
 
 - `services.external_sync.py`
   - 仍负责“按平台路由自动同步”
-  - 但 Grok 分支不再直接调用 `upload_to_grok2api`
+  - Grok 分支现在调用 `GrokSyncService.upload_grok2api_raw(account)`
 - `api/integrations.py`
   - 仍负责 backfill API 层
-  - 但 Grok 分支不再直接调用 `upload_to_grok2api`
+  - Grok 分支现在调用 `GrokSyncService.upload_grok2api_raw(account, api_url=..., app_key=...)`
 - `services.grok2api_runtime.py`
   - 仍负责 runtime readiness / 自动启动检查
 - `GrokSyncService`
   - 统一 Grok 的插件 action 路径与旁路同步动作包装
+  - 不接管 runtime readiness 判断
+  - 不强行上收不同调用方原本已有的 fallback 决策
 
-## Data Flow After Refactor
+## Final Data Flow
 
 ### ChatGPT API path
 
@@ -166,7 +211,7 @@ api/chatgpt.py
 ```text
 services.external_sync.sync_account
   -> ensure_grok2api_ready
-  -> GrokSyncService.upload_grok2api_raw
+  -> GrokSyncService.upload_grok2api_raw(account)
 ```
 
 ### Grok backfill path
@@ -174,7 +219,7 @@ services.external_sync.sync_account
 ```text
 api/integrations.py
   -> ensure_grok2api_ready
-  -> GrokSyncService.upload_grok2api_raw
+  -> GrokSyncService.upload_grok2api_raw(account, api_url=..., app_key=...)
 ```
 
 ## Service Reuse Rule For Side Paths
@@ -228,13 +273,14 @@ api/integrations.py
   - 再调用 `GrokSyncService.upload_grok2api_raw(account)`
 - 在这条路径上：
   - **不显式传入** `api_url / app_key`
-  - 继续依赖 `platforms.grok.grok2api_upload.upload_to_grok2api(...)` 的既有 config fallback
+  - 继续依赖 `platforms.grok.grok2api_upload.upload_to_grok2api(...)` 的既有 lower-layer config fallback
 
 ### Grok backfill path
 
 - `api/integrations.py` 继续保持当前行为
 - 它仍然负责：
   - 显式计算 `api_url / app_key` 的默认值
+  - 当前默认值为 `http://127.0.0.1:8011` 与 `grok2api`
   - 再把这些值传给 `GrokSyncService.upload_grok2api_raw(account, api_url=..., app_key=...)`
 
 这样做的原因是：
