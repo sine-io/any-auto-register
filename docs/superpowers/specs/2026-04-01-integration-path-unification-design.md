@@ -215,6 +215,59 @@ api/integrations.py
 
 这样可以避免本轮把 “平台 service 收口” 扩大成 “runtime 配置策略统一”。 
 
+进一步明确为：
+
+### Grok auto-sync path
+
+- `services.external_sync.py` 继续保持当前行为
+- 它只负责：
+  - 判断当前是否需要做 Grok 自动同步
+  - 调用 `ensure_grok2api_ready()`
+  - 再调用 `GrokSyncService.upload_grok2api_raw(account)`
+- 在这条路径上：
+  - **不显式传入** `api_url / app_key`
+  - 继续依赖 `platforms.grok.grok2api_upload.upload_to_grok2api(...)` 的既有 config fallback
+
+### Grok backfill path
+
+- `api/integrations.py` 继续保持当前行为
+- 它仍然负责：
+  - 显式计算 `api_url / app_key` 的默认值
+  - 再把这些值传给 `GrokSyncService.upload_grok2api_raw(account, api_url=..., app_key=...)`
+
+这样做的原因是：
+
+- auto-sync 当前已经依赖下层 fallback，改动它的配置决策层级收益很低
+- backfill 当前已经在 API 层显式决定默认值，保留这一点最稳妥
+- 两条路径都统一到了同一个 `GrokSyncService.upload_grok2api_raw(...)` 入口，但不强行统一它们原本不同的配置来源方式
+
+## Raw Billing API Shape
+
+为了避免 `ChatGPT` 旁路调用链实现时再发生分歧，本轮明确：
+
+- `ChatGPTBillingService` 提供单一 raw 方法：
+
+```python
+generate_payment_link(
+    account,
+    plan: str,
+    country: str,
+    workspace_name: str = "MyTeam",
+    seat_quantity: int = 5,
+    price_interval: str = "month",
+) -> str
+```
+
+- 当 `plan == "plus"` 时，只使用：
+  - `account`
+  - `country`
+- 当 `plan == "team"` 时，继续使用：
+  - `workspace_name`
+  - `seat_quantity`
+  - `price_interval`
+
+插件 action 路径仍然可以保留更薄的包装入口，但旁路 API 复用统一走这个 raw 方法。
+
 ## What Stays Unchanged
 
 ### ChatGPT
