@@ -65,6 +65,7 @@ Accepted and implemented on 2026-03-31. This document records the final outcome 
 - `xxx` 必须代表一个真实 capability boundary
 - 同义职责不再发明新 helper 名称
 - 平台可以拥有不同 helper 集合，但每个 helper 都必须能映射到明确 service 职责
+- helper naming 规则已经由 `tests/platforms/test_platform_unification.py` 锁定
 
 ### 2. Plugin Ordering Rule
 
@@ -83,6 +84,7 @@ Accepted and implemented on 2026-03-31. This document records the final outcome 
 - 让 5 个参考实现一眼可读
 - 让 helper 能稳定地位于 capability routing 之前
 - 让 AST 级统一性测试可以直接表达约束
+- helper ordering 与 method ordering 都属于最终测试契约的一部分
 
 ### 3. Import Strategy Rule
 
@@ -105,6 +107,7 @@ Accepted and implemented on 2026-03-31. This document records the final outcome 
 - `services/__init__.py` 不保留 eager top-level relative imports
 - `plugin.py` helper factory 在函数体内对具体 service 子模块做局部导入
 - `plugin.py` 不在模块顶层直接导入 `platforms.<name>.services`
+- 这组规则一起构成 heavy 平台的统一 import discipline
 
 这样区分的原因是这些平台存在更明显的 import-time coupling 风险，例如浏览器自动化、桌面链路、cookie/token 引导、legacy compatibility shim。
 
@@ -148,6 +151,7 @@ Accepted and implemented on 2026-03-31. This document records the final outcome 
 - 统一标准现在是 import-time coupling 风险，而不是平台先后顺序
 - `Grok` 与 `Kiro / ChatGPT` 一样，都更适合避免插件导入阶段把整个 service 包 eager 拉起
 - 三者的 capability 集合不同，但 import discipline 应保持一致
+- 对齐点不仅是 lazy-export，还包括 plugin helper factories 一律做局部导入
 
 ## Platform Matrix
 

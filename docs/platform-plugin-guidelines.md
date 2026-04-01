@@ -53,6 +53,7 @@
 - `xxx` 必须描述 service 边界，而不是历史模块名或临时实现细节
 - helper 名称必须和对应 service 语义一一对应
 - 只有在平台确实多出一个独立 capability boundary 时，才新增新的 helper 名称
+- helper 命名预期已经由 `tests/platforms/test_platform_unification.py` 固化，新平台应直接对齐现有命名集合
 
 当前已经固化为参考命名的 helper 包括：
 
@@ -83,6 +84,7 @@
 补充约定：
 
 - 一个平台存在多个 helper 时，helper 顺序应保持稳定，并与该平台 capability 的主路由顺序一致
+- helper ordering 与 plugin method ordering 已由 `tests/platforms/test_platform_unification.py` 直接校验
 - 不要求所有平台拥有相同数量的 helper
 - 但不允许把 helper 穿插回 `register()` / `execute_action()` 之后，避免结构漂移
 
@@ -109,6 +111,7 @@
 - `services/__init__.py` 不应保留 eager top-level relative imports
 - `plugin.py` 不应在模块顶层直接导入 `platforms.<name>.services`
 - 每个 helper factory 在函数体内从具体子模块做局部导入
+- 这个组合规则就是 heavy 平台当前的最终 import discipline，不再按平台历史单独分叉
 
 这个规则针对的是 import-time coupling 风险，例如：
 
@@ -121,7 +124,8 @@
 
 `Grok` 的最终决定已经收敛到与 `Kiro / ChatGPT` 相同的导入纪律：
 
-- `platforms/grok/services/__init__.py` 现在使用 lazy export
+- `platforms/grok/services/__init__.py` 现在使用 lazy export（`__all__` + `__getattr__`）
+- `plugin.py` 中的 helper factories 使用局部导入
 - `GrokPlatform._registration_service()` 使用局部导入
 - `GrokPlatform._cookie_service()` 使用局部导入
 - `GrokPlatform._sync_service()` 使用局部导入
@@ -130,6 +134,7 @@
 
 - `Grok` 也属于 import-time coupling 更敏感的平台
 - 因此它应遵守与 `Kiro / ChatGPT` 一样的 heavy-platform import discipline
+- 这让 `Grok / Kiro / ChatGPT` 在 service package lazy export 与 helper 内局部导入两层上保持一致
 - 允许 service 能力集合不同，但不再允许保留“只有 Grok 例外地 eager import service 包”的历史分叉
 
 ### Acceptable Differences
@@ -150,6 +155,8 @@
 - `account` 与 `cookie` 并存
 - `sync / external_sync / manager_sync` 并存
 - `simple-export` 与 `lazy-export` 并存，只要它们由依赖重量解释
+- `Cursor / Trae` 继续保持轻平台的简单直接导出
+- `Kiro / Grok / ChatGPT` 继续保持重平台的 lazy-export + helper 局部导入
 
 下面这些差异不再视为合理：
 
